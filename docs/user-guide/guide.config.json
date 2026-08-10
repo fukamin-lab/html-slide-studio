@@ -1,0 +1,20 @@
+{
+  "title": "HTML Slide Studio 操作ガイド",
+  "productName": "HTML Slide Studio",
+  "guideLabel": "User Guide",
+  "eyebrow": "HTML Slide Studio",
+  "heading": "操作ガイド",
+  "description": "AIで作ったHTMLスライドを開き、手元で直し、同じファイルへ保存して発表するまで。",
+  "badges": ["9つの目的", "8つの実画面", "ローカル完結"],
+  "sections": [
+    { "id": "overview", "title": "このツールでできること", "file": "00-overview.md" },
+    { "id": "start", "title": "HTMLを開く", "file": "10-start.md" },
+    { "id": "editor", "title": "編集画面の見方", "file": "20-editor.md" },
+    { "id": "edit-content", "title": "文字と画像を直す", "file": "30-insert.md" },
+    { "id": "slides", "title": "スライドを追加・複製・並べ替える", "file": "35-slides.md" },
+    { "id": "check", "title": "発表前に確認する", "file": "40-qa.md" },
+    { "id": "save", "title": "同じHTMLへ保存する", "file": "50-save.md" },
+    { "id": "present", "title": "発表する", "file": "60-present.md" },
+    { "id": "trouble", "title": "困ったとき", "file": "70-trouble.md" }
+  ]
+}

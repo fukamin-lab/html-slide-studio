@@ -1,0 +1,39 @@
+name: 改善提案
+description: 対象利用者と困りごとから改善を提案します
+title: "[Idea]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        HTML Slide Studioは「静的HTMLスライドの最後の修正と発表」に焦点を絞っています。機能名だけでなく、誰のどんな作業が良くなるかを教えてください。
+  - type: textarea
+    id: user
+    attributes:
+      label: 誰が、どの場面で困っていますか
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: 現在の回避方法
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 望む改善
+    validations:
+      required: true
+  - type: textarea
+    id: tradeoff
+    attributes:
+      label: 単純さ・安全性への影響
+      description: 操作やコードが複雑になる点、削れる既存機能があれば書いてください。
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: 範囲の確認
+      options:
+        - label: 静的HTMLスライドの修正または発表に直接関係します
+          required: true

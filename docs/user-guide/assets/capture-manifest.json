@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 3,
+  "capturedAt": "2026-08-10T16:27:11.793Z",
+  "displayMode": "multi-display",
+  "presenterCapture": "physical-multi-display",
+  "source": {
+    "gitCommit": "af6ce28435c8a55d312f5d8e0cc3abecb24d8aa9",
+    "gitDirty": false,
+    "appVersion": "0.1.0",
+    "electronVersion": "42.8.1",
+    "command": "npm run build && node scripts/capture-user-guide.mjs",
+    "platform": "win32",
+    "arch": "arm64"
+  },
+  "files": [
+    "01-start.png",
+    "02-editor.png",
+    "03-slide-operations.png",
+    "04-text-edit.png",
+    "05-check.png",
+    "06-save-complete.png",
+    "07-audience-mode.png",
+    "08-presenter-window.png"
+  ],
+  "sha256": {
+    "01-start.png": "13b02b749a85ce2f1215ffab100b2c01fbaa9218a5383d2824b33b5e690cfaa5",
+    "02-editor.png": "2c2570a2a7344cbed983c003027f42e979d157aa2bd8cb9bca422d73ab43a7e2",
+    "03-slide-operations.png": "66dab00a0c67f02009962a14381229cf6095cd9308b05609ed647247282e008a",
+    "04-text-edit.png": "d334d4e3badb3cf0d66af08be2d276ceca73c8116d65c288255508482c6c848b",
+    "05-check.png": "686a7c83ee56cc2d0ef4d9a08a820c7ccae6c127cb1c79ea4e0e72a087d42a8f",
+    "06-save-complete.png": "aee40a6430ff2c3714e412780d54e80848bec98fe80d5e380d5b8c6807c7636f",
+    "07-audience-mode.png": "a274566cf6223a78dd556cc1f7432962c1e632cdaad06a5008341919a4e940d9",
+    "08-presenter-window.png": "d91c1d71261d3a84ae86078b5b2e8101cc48324fd2bd32d286799227a37dd08d"
+  }
+}

@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HTML Slide Studio デモ</title>
+  <style>
+    :root {
+      --ink: #20201e;
+      --muted: #6f6e69;
+      --line: #deddd8;
+      --paper: #f7f7f5;
+      --surface: #ffffff;
+      --accent: #2f63d8;
+      --accent-soft: #edf2ff;
+      --warm: #f3eee4;
+      --good: #2e6b52;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #e9e9e6; }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+      padding: 24px;
+      color: var(--ink);
+      font-family: "Yu Gothic UI", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+    }
+
+    .slide {
+      position: relative;
+      width: 1366px;
+      height: 768px;
+      flex: 0 0 768px;
+      overflow: hidden;
+      padding: 66px 82px 50px;
+      background: var(--paper);
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { max-width: 980px; margin-bottom: 24px; font-size: 70px; line-height: 1.14; letter-spacing: -0.045em; }
+    h2 { max-width: 1080px; margin-bottom: 24px; font-size: 52px; line-height: 1.2; letter-spacing: -0.035em; }
+    h3 { margin-bottom: 10px; font-size: 25px; line-height: 1.35; }
+    p { color: var(--muted); font-size: 24px; line-height: 1.65; }
+    strong { color: var(--ink); font-weight: 700; }
+
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 23px;
+      color: var(--muted);
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .kicker::before { width: 28px; height: 2px; content: ""; background: var(--ink); }
+    .lead { max-width: 920px; font-size: 28px; line-height: 1.6; }
+    .accent { color: var(--accent); }
+    .small { font-size: 18px; line-height: 1.6; }
+
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; }
+
+    .card {
+      min-height: 160px;
+      padding: 24px 25px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    .card p { margin-bottom: 0; font-size: 19px; line-height: 1.55; }
+    .number { margin-bottom: 20px; color: var(--accent); font-size: 17px; font-weight: 800; letter-spacing: 0.08em; }
+
+    .chip {
+      display: inline-flex;
+      margin-bottom: 16px;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .footer {
+      position: absolute;
+      right: 82px;
+      bottom: 27px;
+      left: 82px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #8a8984;
+      font-size: 14px;
+      letter-spacing: 0.04em;
+    }
+
+    .hero-layout { display: grid; grid-template-columns: 1.13fr 0.87fr; align-items: center; gap: 60px; height: 560px; }
+    .hero-layout h1 { font-size: 74px; }
+    .loop {
+      position: relative;
+      width: 420px;
+      height: 420px;
+      margin-left: auto;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      background: var(--surface);
+    }
+
+    .loop-core {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 158px;
+      height: 158px;
+      display: grid;
+      place-items: center;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      background: var(--ink);
+      color: white;
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .loop-label { position: absolute; width: 112px; text-align: center; font-size: 19px; font-weight: 700; }
+    .loop-label.top { top: 40px; left: 154px; }
+    .loop-label.right { top: 193px; right: 22px; }
+    .loop-label.bottom { bottom: 42px; left: 154px; }
+    .loop-label.left { top: 193px; left: 20px; }
+
+    .principles { margin-top: 44px; }
+    .principles .card { min-height: 236px; padding-top: 28px; }
+    .principles h3 { font-size: 28px; }
+    .principles .symbol { margin-bottom: 23px; font-size: 42px; line-height: 1; }
+
+    .flow { display: grid; grid-template-columns: 1fr 42px 1fr 42px 1fr 42px 1fr; align-items: stretch; margin-top: 44px; }
+    .flow-step { min-height: 266px; padding: 28px 23px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    .flow-step h3 { font-size: 25px; }
+    .flow-step p { font-size: 18px; }
+    .flow-arrow { display: grid; place-items: center; color: var(--muted); font-size: 27px; }
+    .flow-result { margin-top: 22px; padding: 17px 22px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); font-size: 19px; font-weight: 700; text-align: center; }
+
+    .compare { margin-top: 30px; }
+    .compare-panel { min-height: 344px; padding: 28px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+    .compare-panel.after { border-color: #bdcaec; background: #f7f9ff; }
+    .compare-panel ul { margin: 25px 0 0; padding: 0; list-style: none; }
+    .compare-panel li { position: relative; margin: 17px 0; padding-left: 26px; color: var(--muted); font-size: 20px; line-height: 1.45; }
+    .compare-panel li::before { position: absolute; left: 0; content: "—"; color: var(--ink); }
+    .timeline { display: grid; grid-template-columns: repeat(5, 1fr); margin-top: 18px; border-top: 1px solid var(--line); }
+    .timeline span { padding-top: 12px; color: var(--muted); font-size: 15px; text-align: center; }
+    .timeline span.active { color: var(--accent); font-weight: 800; }
+
+    .formula { margin-top: 35px; }
+    .formula .card { min-height: 170px; }
+    .formula h3 { font-size: 24px; }
+    .prompt-sample { margin-top: 18px; padding: 22px 26px; border-radius: 14px; background: var(--ink); color: #f3f3f1; font-size: 20px; line-height: 1.55; }
+
+    .ratio-layout { display: grid; grid-template-columns: 0.78fr 1.22fr; gap: 48px; align-items: center; margin-top: 28px; }
+    .ratio { position: relative; height: 390px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); overflow: hidden; }
+    .ratio-main { height: 90%; display: grid; place-items: center; background: var(--warm); font-size: 92px; font-weight: 800; letter-spacing: -0.06em; }
+    .ratio-last { height: 10%; display: grid; place-items: center; background: var(--accent); color: white; font-size: 18px; font-weight: 800; }
+    .checklist { display: grid; gap: 13px; }
+    .check-item { display: grid; grid-template-columns: 36px 1fr; gap: 14px; align-items: start; padding: 17px 19px; border-bottom: 1px solid var(--line); }
+    .check-mark { display: grid; width: 29px; height: 29px; place-items: center; border: 1px solid var(--ink); border-radius: 50%; font-size: 15px; font-weight: 800; }
+    .check-item h3 { margin: 0 0 4px; font-size: 21px; }
+    .check-item p { margin: 0; font-size: 17px; }
+
+    .experiment { margin-top: 48px; }
+    .experiment .card { min-height: 255px; }
+    .experiment h3 { font-size: 25px; }
+    .experiment .time { margin-top: 24px; color: var(--ink); font-size: 17px; font-weight: 800; }
+    .callout { margin-top: 22px; padding: 18px 22px; border-radius: 12px; background: var(--ink); color: white; font-size: 21px; text-align: center; }
+
+    .acceptance { margin-top: 26px; }
+    .acceptance .card { min-height: 155px; padding: 21px 22px; }
+    .acceptance h3 { margin-bottom: 6px; font-size: 21px; }
+    .acceptance p { font-size: 16px; line-height: 1.45; }
+    .acceptance-note { margin-top: 18px; color: var(--good); font-size: 18px; font-weight: 700; text-align: center; }
+  </style>
+</head>
+<body>
+  <section class="slide" data-label="ようこそ" data-speaker-notes="このデモは、HTML Slide Studioの基本操作を8枚で試すための編集用コピーです。まずは文字の変更から始めてみましょう。">
+    <div class="hero-layout">
+      <div>
+        <div class="kicker">Product Tour</div>
+        <h1 id="demo-title">HTMLスライドを<br><span class="accent">手元で仕上げる</span></h1>
+        <p class="lead" aria-labelledby="demo-title">開く、直す、保存する、発表する。<strong>基本操作を8枚で試せます。</strong></p>
+      </div>
+      <div class="loop" aria-label="HTML Slide Studioの基本操作">
+        <div class="loop-label top">HTMLを開く</div>
+        <div class="loop-label right">画面で直す</div>
+        <div class="loop-label bottom">上書き保存</div>
+        <div class="loop-label left">そのまま発表</div>
+        <div class="loop-core">HTML</div>
+      </div>
+    </div>
+    <div class="footer"><span>HTML Slide Studio Demo</span><span>01</span></div>
+  </section>
+
+  <section class="slide" data-label="文字を直す" data-speaker-notes="スライド上の文字をクリックすると選択できます。もう一度クリックして入力し、ダブルクリックで全文を選択できます。">
+    <div class="kicker">01 — Text</div>
+    <h2 id="role-title">まずは、<span class="accent">文字を直す</span></h2>
+    <div class="grid-3 principles" aria-labelledby="role-title">
+      <div class="card">
+        <div class="symbol">1</div>
+        <h3>選ぶ</h3>
+        <p>スライド上の見出しや本文をクリックします。選択枠と書式パネルが表示されます。</p>
+      </div>
+      <div class="card">
+        <div class="symbol">2</div>
+        <h3>入力する</h3>
+        <p>選択中の文字をもう一度クリックして入力します。ダブルクリックなら全文選択です。</p>
+      </div>
+      <div class="card">
+        <div class="symbol">3</div>
+        <h3>戻す</h3>
+        <p>結果を見比べ、必要ならCtrl+Zで元に戻します。Ctrl+Yでやり直せます。</p>
+      </div>
+    </div>
+    <div class="footer"><span>試す：この見出しの「文字」を別の言葉に変える</span><span>02</span></div>
+  </section>
+
+  <section class="slide" data-label="スライドを増やす" data-speaker-notes="左側のスライド一覧で、追加、複製、上下への移動を試せます。現在のスライドを選んでから操作してください。">
+    <div class="kicker">02 — Slides</div>
+    <h2 id="flow-title">構成は、左の一覧で変える</h2>
+    <div class="flow" aria-labelledby="flow-title">
+      <div class="flow-step">
+        <div class="number">STEP 1</div>
+        <h3>選択</h3>
+        <p>左のサムネイルを押して、編集したいスライドへ切り替えます。</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="number">STEP 2</div>
+        <h3>複製</h3>
+        <p>似たレイアウトを増やすときは、選択中の一枚を複製します。</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="number">STEP 3</div>
+        <h3>追加</h3>
+        <p>＋を押すと、現在のスライドの後ろへ新しい一枚を追加します。</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="number">STEP 4</div>
+        <h3>並べ替え</h3>
+        <p>上下の矢印で順番を変更します。結果はすぐ一覧へ反映されます。</p>
+      </div>
+    </div>
+    <div class="flow-result">試す：このスライドを複製し、一つ下へ移動してから元に戻す</div>
+    <div class="footer"><span>選択 → 複製または追加 → 並べ替え</span><span>03</span></div>
+  </section>
+
+  <section class="slide" data-label="見た目を整える" data-speaker-notes="文字や画像を選択すると、右側のパネルとスライド上のツールバーで見た目を調整できます。ドラッグや矢印キーで位置も動かせます。">
+    <div class="kicker">03 — Style</div>
+    <h2 id="compare-title">内容を変えずに、見た目を整える</h2>
+    <div class="grid-2 compare" aria-labelledby="compare-title">
+      <div class="compare-panel">
+        <span class="chip">文字</span>
+        <h3>読みやすさを調整する</h3>
+        <ul>
+          <li>太字、文字色、背景色</li>
+          <li>フォントサイズと配置</li>
+          <li>不要になった要素の削除</li>
+        </ul>
+      </div>
+      <div class="compare-panel after">
+        <span class="chip">位置と大きさ</span>
+        <h3>余白とバランスを整える</h3>
+        <ul>
+          <li>ドラッグで自由に移動</li>
+          <li>矢印キーで細かく調整</li>
+          <li>四隅のハンドルでサイズ変更</li>
+        </ul>
+      </div>
+    </div>
+    <div class="timeline"><span>選ぶ</span><span class="active">書式</span><span class="active">位置</span><span class="active">大きさ</span><span>確認</span></div>
+    <div class="footer"><span>試す：カードの見出しを選び、文字色を変える</span><span>04</span></div>
+  </section>
+
+  <section class="slide" data-label="文字と画像を追加する" data-speaker-notes="上部のテキストと画像ボタンから新しい要素を追加できます。画像はHTMLの隣にあるassetsフォルダへコピーされます。">
+    <div class="kicker">04 — Insert</div>
+    <h2 id="formula-title">足りない要素は、あとから追加する</h2>
+    <div class="grid-4 formula" aria-labelledby="formula-title">
+      <div class="card"><div class="number">01</div><h3>テキスト</h3><p>上部の「テキスト」から新しい文字枠を追加</p></div>
+      <div class="card"><div class="number">02</div><h3>画像</h3><p>上部の「画像」からPNGやJPEGを選択</p></div>
+      <div class="card"><div class="number">03</div><h3>配置</h3><p>追加した要素をドラッグして置きたい場所へ</p></div>
+      <div class="card"><div class="number">04</div><h3>調整</h3><p>書式、サイズ、重なり方を見ながら仕上げる</p></div>
+    </div>
+    <div class="prompt-sample">画像はHTMLへ埋め込まず、同じ場所の &lt;ファイル名&gt;.assets/ へコピーします。HTML本体の肥大化を避けられます。</div>
+    <div class="footer"><span>試す：テキストを一つ追加し、短いメモを書き込む</span><span>05</span></div>
+  </section>
+
+  <section class="slide" data-label="発表者ノートを書く" data-speaker-notes="ここが発表者ノートです。編集画面の下部と発表者画面のどちらからでも変更できます。入力内容はスライドと一緒に保存されます。">
+    <div class="kicker">05 — Speaker Notes</div>
+    <h2 id="quality-title">話す内容は、スライドと分けて残す</h2>
+    <div class="ratio-layout" aria-labelledby="quality-title">
+      <div class="ratio">
+        <div class="ratio-main">NOTE</div>
+        <div class="ratio-last">このスライドの発表者ノート</div>
+      </div>
+      <div class="checklist">
+        <div class="check-item"><div class="check-mark">1</div><div><h3>編集画面で入力</h3><p>画面下部の入力欄へ、話す順番や補足を書きます。</p></div></div>
+        <div class="check-item"><div class="check-mark">2</div><div><h3>発表者画面で確認</h3><p>観客には見せず、自分だけが読みながら話せます。</p></div></div>
+        <div class="check-item"><div class="check-mark">3</div><div><h3>発表中にも修正</h3><p>言い回しを思いついたら、その場で書き直せます。</p></div></div>
+        <div class="check-item"><div class="check-mark">4</div><div><h3>HTMLと一緒に保存</h3><p>編集画面へ戻って保存すると、ノートも残ります。</p></div></div>
+      </div>
+    </div>
+    <div class="footer"><span>試す：下部のノートへ一文追加する</span><span>06</span></div>
+  </section>
+
+  <section class="slide" data-label="発表する" data-speaker-notes="発表ボタンを押すと、1画面では全画面表示、複数画面では観客用画面と発表者画面に分かれます。レーザーとペンも使えます。">
+    <div class="kicker">06 — Present</div>
+    <h2 id="experiment-title">編集したHTMLを、そのまま発表する</h2>
+    <div class="grid-3 experiment" aria-labelledby="experiment-title">
+      <div class="card">
+        <div class="number">A</div>
+        <h3>スライドを移動</h3>
+        <p>矢印キー、PageUp、PageDown、Spaceで前後へ進みます。</p>
+        <div class="time">左の一覧から直接移動も可能</div>
+      </div>
+      <div class="card">
+        <div class="number">B</div>
+        <h3>注目箇所を示す</h3>
+        <p>初期状態は数秒で消えるレーザー。ペンなら消すまで線が残ります。</p>
+        <div class="time">色も発表者画面で変更</div>
+      </div>
+      <div class="card">
+        <div class="number">C</div>
+        <h3>編集へ戻る</h3>
+        <p>発表者画面の終了ボタン、またはEscで編集画面へ戻ります。</p>
+        <div class="time">保存してから開始すると安心</div>
+      </div>
+    </div>
+    <div class="callout">1画面でも使えます。2画面なら観客用スライドと発表者画面を自動で分けます。</div>
+    <div class="footer"><span>試す：発表を開始し、レーザーで見出しを指す</span><span>07</span></div>
+  </section>
+
+  <section class="slide" data-label="保存して開き直す" data-speaker-notes="最後に保存を押し、編集内容が同じHTMLへ反映されることを確認します。このデモは編集用コピーなので自由に上書きできます。">
+    <div class="kicker">07 — Save</div>
+    <h2 id="acceptance-title">最後に、保存して開き直す</h2>
+    <div class="grid-3 acceptance" aria-labelledby="acceptance-title">
+      <div class="card"><div class="number">01</div><h3>文字</h3><p>変更した見出しや追加したテキストが残っている。</p></div>
+      <div class="card"><div class="number">02</div><h3>構成</h3><p>追加、複製、並べ替えたスライドが一覧に反映されている。</p></div>
+      <div class="card"><div class="number">03</div><h3>書式</h3><p>文字色、背景色、位置、サイズの変更が残っている。</p></div>
+      <div class="card"><div class="number">04</div><h3>画像</h3><p>追加した画像がHTMLと同じ場所のassetsから表示される。</p></div>
+      <div class="card"><div class="number">05</div><h3>ノート</h3><p>発表者ノートが編集画面と発表者画面の両方に表示される。</p></div>
+      <div class="card"><div class="number">06</div><h3>発表</h3><p>スライド移動、レーザー、ペン、終了操作が使える。</p></div>
+    </div>
+    <div class="acceptance-note">このデモは製品内の原本ではなく、あなた専用の編集用コピーです。</div>
+    <div class="footer"><span>保存 → 開き直す → 発表する</span><span>08</span></div>
+  </section>
+</body>
+</html>

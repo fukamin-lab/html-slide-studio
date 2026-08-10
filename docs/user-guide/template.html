@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{TITLE}}</title>
+  <link rel="icon" href="assets/brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/guide-base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+</head>
+<body>
+<a class="skip-link" href="#main-content">本文へ移動</a>
+<div class="site-shell">
+  <aside class="guide-sidebar">
+    <a class="brand" href="#top" aria-label="操作ガイドの先頭へ">
+      <img src="assets/brand-mark.svg" alt="">
+      <span><strong>{{PRODUCT_NAME}}</strong><small>{{GUIDE_LABEL}}</small></span>
+    </a>
+    <nav class="toc" aria-label="目次"><p class="toc__label">目次</p><ol>
+{{TOC}}
+    </ol></nav>
+    <p class="sidebar-note">画面証拠つき<br>ローカル操作ガイド</p>
+  </aside>
+
+  <main id="main-content">
+    <header id="top" class="hero">
+      <div class="hero__copy"><p class="eyebrow">{{EYEBROW}}</p><h1>{{HEADING}}</h1><p class="lead">{{DESCRIPTION}}</p><div class="hero__meta">{{BADGES}}</div></div>
+      <img class="hero__mark" src="assets/brand-mark.svg" alt="">
+    </header>
+
+{{CONTENT}}
+
+    <footer>掲載画面はWindows ARM64 Electronで現行ソースを実行し、説明書用の合成データから自動取得しました。再取得方法は <code>npm run capture:guide</code> と <code>docs/user-guide/AUTHORING_PLAYBOOK.md</code> に記録しています。取得結果は <code>assets/capture-manifest.json</code> で確認できます。</footer>
+  </main>
+</div>
+</body>
+</html>

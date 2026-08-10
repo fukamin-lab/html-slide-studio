@@ -1,0 +1,65 @@
+{
+  "name": "html-slide-studio",
+  "version": "0.1.0",
+  "description": "A local-first Windows app for polishing and presenting static HTML slide decks.",
+  "license": "MIT",
+  "private": true,
+  "author": "fukamin-lab",
+  "homepage": "https://github.com/fukamin-lab/html-slide-studio#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fukamin-lab/html-slide-studio.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fukamin-lab/html-slide-studio/issues"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "type": "module",
+  "main": "./out/main/main.js",
+  "scripts": {
+    "postinstall": "node scripts/ensure-electron-binary.mjs",
+    "icon:prepare": "electron scripts/prepare-app-icon.mjs",
+    "dev": "electron-vite dev",
+    "build": "tsc --noEmit && electron-vite build",
+    "package:win": "npm run icon:prepare && npm run build && node scripts/package-windows-arm64.mjs",
+    "verify:package": "node scripts/verify-packaged-app.mjs",
+    "release:checksums": "node scripts/write-release-checksums.mjs",
+    "capture:guide": "npm run build && node scripts/capture-user-guide.mjs",
+    "guide:build": "node scripts/build-user-guide.mjs",
+    "guide:check": "node scripts/build-user-guide.mjs --check",
+    "public:check": "node scripts/check-public-boundary.mjs",
+    "typecheck": "tsc --noEmit",
+    "e2e:smoke": "npm run build && node tests/e2e/smoke.mjs",
+    "e2e:demo": "npm run build && node tests/e2e/demo.mjs",
+    "test:unit": "node --experimental-strip-types --test \"tests/unit/*.test.mjs\"",
+    "test": "node --experimental-strip-types --test \"tests/unit/*.test.mjs\"",
+    "verify": "npm test && npm run typecheck && npm run e2e:demo && npm run e2e:smoke",
+    "preview": "electron-vite preview"
+  },
+  "overrides": {
+    "nanoid": "3.3.17",
+    "electron-vite": {
+      "esbuild": "npm:esbuild-wasm@0.25.12"
+    },
+    "vite": {
+      "esbuild": "npm:esbuild-wasm@0.28.1"
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "42.8.1",
+    "electron-builder": "26.15.3",
+    "electron-vite": "^5.0.0",
+    "lucide-react": "^0.468.0",
+    "marked": "^18.0.9",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.7.2",
+    "vite": "^7.3.6"
+  }
+}

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>Reveal nested fixture</title>
+  <style>
+    html, body { margin: 0; background: #ececea; }
+    .slide { position: relative; width: 1366px; height: 768px; overflow: hidden; padding: 88px 100px; background: #fff; color: #202124; font-family: Arial, "Noto Sans JP", sans-serif; }
+    h1 { margin: 0 0 28px; font-size: 64px; }
+    p { max-width: 900px; font-size: 30px; line-height: 1.55; }
+  </style>
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+      <section class="slide" data-label="親スライド">
+        <h1 id="parent-heading">親スライド</h1>
+        <section class="fragment" id="nested-fragment" data-nested-fragment="true" aria-labelledby="parent-heading">
+          <p>これはスライド内の入れ子要素です。</p>
+        </section>
+      </section>
+      <section class="slide" data-label="次のスライド">
+        <h1 id="next-heading">次のスライド</h1>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

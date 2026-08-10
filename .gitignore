@@ -1,0 +1,15 @@
+node_modules/
+out/
+out-v2/
+release/
+.hallmark/
+build/icon.png
+build/icon.ico
+docs/user-guide/.runtime-profile/
+docs/user-guide/.guide-capture/
+dist/
+dist-electron/
+.vite/
+*.log
+.DS_Store
+Thumbs.db

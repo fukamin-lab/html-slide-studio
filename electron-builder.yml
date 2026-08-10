@@ -1,0 +1,38 @@
+# Owner-local Windows ARM64 build. This does not publish, sign, or install the app.
+appId: io.github.fukamin-lab.html-slide-studio
+productName: HTML Slide Studio
+directories:
+  output: release
+files:
+  - out/**
+  - demo/html-slide-studio-demo.html
+  - package.json
+extraResources:
+  - from: LICENSE
+    to: LICENSE
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
+asar: true
+win:
+  icon: build/icon.ico
+  electronLanguages:
+    - en-US
+    - ja
+  target:
+    - target: portable
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+  # Keep local builds unsigned while still applying the product icon and metadata.
+  signExecutable: false
+portable:
+  artifactName: "HTML Slide Studio.${ext}"
+  # Embed the ARM64 app directory directly. This avoids the legacy x86
+  # Nsis7z extraction plug-in, which exits before launch on native ARM64.
+  useZip: true
+  # scripts/package-windows-arm64.mjs makes the single payload deterministic.
+  buildUniversalInstaller: true
+npmRebuild: false
+nodeGypRebuild: false
