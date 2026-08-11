@@ -137,11 +137,11 @@ try {
     return true;
   })()`);
   let livePresenterCdp = null;
-  try {
+  if (dualModeExpected) {
     const presenterTarget = await waitForTarget(
       `http://127.0.0.1:${session.port}`,
       (item) => item.type === "page" && item.url.includes("view=presenter"),
-      3_000
+      20_000
     );
     livePresenterCdp = await CdpClient.connect(presenterTarget.webSocketDebuggerUrl);
     await livePresenterCdp.send("Runtime.enable");
@@ -198,8 +198,6 @@ try {
     })()`), { fill: "none", stroke: "#ef4444" });
     presenterDrawingSynced = true;
     presenterNotesRoundTrip = true;
-  } catch (error) {
-    if (!String(error).includes("Timed out waiting for target")) throw error;
   }
   if (dualModeExpected) assert.equal(presenterNotesRoundTrip, true, "dual-display mode must complete the live Presenter notes round trip");
   if (dualModeExpected) assert.equal(presenterDrawingSynced, true, "dual-display mode must mirror Presenter drawing to the audience surface");
