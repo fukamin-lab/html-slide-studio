@@ -117,29 +117,117 @@ try {
     documentName: "html-slide-studio-demo.html",
     bridge: true
   });
+  const addedOverlay = await evaluate(cdp, `(() => {
+    const button = Array.from(document.querySelectorAll('.editor-toolbar button'))
+      .find((candidate) => candidate.textContent?.trim() === 'テキスト');
+    if (!(button instanceof HTMLButtonElement)) return false;
+    button.click();
+    return true;
+  })()`);
+  assert.equal(addedOverlay, true, "Packaged app must allow adding an inline text object before close verification");
+  await waitForEval(cdp, "Boolean(document.querySelector('.overlay-text--selected .overlay-text__content'))", 10_000);
+  const overlayPoint = await evaluate(cdp, `(() => {
+    const element = document.querySelector('.overlay-text--selected .overlay-text__content');
+    if (!(element instanceof HTMLElement)) return null;
+    const rect = element.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  })()`);
+  assert.ok(overlayPoint, "Packaged inline text object must have a clickable surface");
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: overlayPoint.x, y: overlayPoint.y, button: "left", buttons: 1, clickCount: 1 });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: overlayPoint.x, y: overlayPoint.y, button: "left", buttons: 0, clickCount: 1 });
+  await waitForEval(cdp, "document.querySelector('.overlay-text__content')?.getAttribute('contenteditable') === 'true'", 10_000);
+  const dirtyEditApplied = await evaluate(cdp, `(() => {
+    const editor = document.querySelector('.overlay-text__content');
+    if (!(editor instanceof HTMLElement)) return false;
+    editor.textContent = '終了確認テスト';
+    editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: '終了確認テスト' }));
+    return true;
+  })()`);
+  assert.equal(dirtyEditApplied, true, "Packaged app must apply an active inline text edit before close verification");
+  await waitForEval(cdp, "document.querySelector('#inspector-text')?.value === '終了確認テスト' && document.querySelector('.app-status')?.textContent.includes('未保存')", 10_000);
   verificationResult = { pass: true, executable: portablePath, payloadMachine: "0xAA64", endpoint, packagedDemoOpenedFromWelcome: true, state };
 } catch (error) {
   console.error(logs.join(""));
   throw error;
 } finally {
   let terminationError = null;
+  let dialogConfirmer = null;
+  const cancelDialogLogs = [];
+  const discardDialogLogs = [];
   try {
-    if (cdp && isChildRunning(child)) {
-      try {
-        await cdp.send("Browser.close");
-      } catch {
-        // The CDP socket can close before Browser.close returns its response.
+    if (cdp) {
+      assert.equal(isChildRunning(child), true, "Portable launcher exited before native window-close verification");
+      dialogConfirmer = spawn("powershell.exe", [
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", resolve("scripts/confirm-unsaved-close.ps1"),
+        "-RootProcessId", String(child.pid),
+        "-Action", "Cancel",
+        "-TimeoutMs", "20000"
+      ], {
+        cwd: projectRoot,
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true
+      });
+      dialogConfirmer.stdout.on("data", (chunk) => cancelDialogLogs.push(chunk.toString()));
+      dialogConfirmer.stderr.on("data", (chunk) => cancelDialogLogs.push(chunk.toString()));
+      const cancelExit = await waitForProcessExit(dialogConfirmer, 25_000, "Unsaved-close cancel confirmer");
+      const cancelLog = cancelDialogLogs.join("");
+      assert.equal(cancelExit.code, 0, `Owned unsaved-close cancel action was not confirmed:\n${cancelLog}`);
+      const cancelPayloadPid = assertDialogProcessIds(cancelLog, "Cancel");
+      assert.equal(isChildRunning(child), true, "Packaged app must remain running after canceling the unsaved-close dialog");
+      assert.equal(isProcessRunning(cancelPayloadPid), true, "Packaged payload window process must remain running after canceling close");
+      await waitForEval(cdp, "document.querySelector('.app-status')?.textContent.includes('未保存')", 10_000);
+
+      dialogConfirmer = spawn("powershell.exe", [
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", resolve("scripts/confirm-unsaved-close.ps1"),
+        "-RootProcessId", String(child.pid),
+        "-Action", "Discard",
+        "-TimeoutMs", "20000"
+      ], {
+        cwd: projectRoot,
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true
+      });
+      dialogConfirmer.stdout.on("data", (chunk) => discardDialogLogs.push(chunk.toString()));
+      dialogConfirmer.stderr.on("data", (chunk) => discardDialogLogs.push(chunk.toString()));
+      const discardExit = await waitForProcessExit(dialogConfirmer, 25_000, "Unsaved-close discard confirmer");
+      const discardLog = discardDialogLogs.join("");
+      assert.equal(discardExit.code, 0, `Owned unsaved-close discard action was not confirmed:\n${discardLog}`);
+      const discardPayloadPid = assertDialogProcessIds(discardLog, "Discard");
+      await waitForProcessExit(child, 30_000, "Packaged app");
+      assert.equal(isProcessRunning(discardPayloadPid), false, "Packaged payload window process must exit after discarding changes");
+      if (verificationResult) {
+        verificationResult.nativeDirtyWindowClose = true;
+        verificationResult.nativeUnsavedDialogCancelVerified = true;
+        verificationResult.nativeUnsavedDialogConfirmed = true;
       }
-      try { await waitForProcessExit(child, 30_000); } catch {}
     }
-    try { cdp?.close(); } catch {}
-    if (child?.pid && isChildRunning(child)) {
-      execFileSync("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" });
-      await waitForProcessExit(child, 30_000);
-    }
-    assert.equal(isChildRunning(child), false, "Packaged app process did not terminate");
   } catch (error) {
     terminationError = error;
+  } finally {
+    try { cdp?.close(); } catch {}
+    if (dialogConfirmer?.pid && isChildRunning(dialogConfirmer)) {
+      try {
+        execFileSync("taskkill", ["/pid", String(dialogConfirmer.pid), "/t", "/f"], { stdio: "ignore" });
+        await waitForProcessExit(dialogConfirmer, 10_000, "Dialog confirmer cleanup");
+      } catch (error) {
+        terminationError ??= error;
+      }
+    }
+    if (child?.pid && isChildRunning(child)) {
+      try {
+        execFileSync("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" });
+        await waitForProcessExit(child, 30_000, "Packaged app cleanup");
+      } catch (error) {
+        terminationError ??= error;
+      }
+    }
+    if (isChildRunning(child)) {
+      terminationError ??= new Error("Packaged app process did not terminate");
+    }
   }
   await rm(verificationRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   if (terminationError) throw terminationError;
@@ -156,12 +244,12 @@ async function assertPortAvailable(host, port) {
   await new Promise((resolveClose, rejectClose) => server.close((error) => error ? rejectClose(error) : resolveClose()));
 }
 
-async function waitForProcessExit(childProcess, timeoutMs) {
+async function waitForProcessExit(childProcess, timeoutMs, label = "Process") {
   if (!isChildRunning(childProcess)) return { code: childProcess.exitCode, signal: childProcess.signalCode };
   return new Promise((resolveExit, rejectExit) => {
     const timer = setTimeout(() => {
       childProcess.off("exit", onExit);
-      rejectExit(new Error(`Packaged app did not exit within ${timeoutMs}ms`));
+      rejectExit(new Error(`${label} did not exit within ${timeoutMs}ms`));
     }, timeoutMs);
     const onExit = (code, signal) => {
       clearTimeout(timer);
@@ -173,6 +261,25 @@ async function waitForProcessExit(childProcess, timeoutMs) {
 
 function isChildRunning(childProcess) {
   return Boolean(childProcess && childProcess.exitCode === null && childProcess.signalCode === null);
+}
+
+function assertDialogProcessIds(log, action) {
+  const closeMatch = log.match(/close-requested:(\d+)/);
+  const confirmMatch = log.match(new RegExp(`confirmed:${action}:(\\d+)`));
+  assert.ok(closeMatch, "Dialog verifier must request a native close on the owned payload window");
+  assert.ok(confirmMatch, `Dialog verifier must confirm the ${action} action on the owned payload window`);
+  assert.equal(confirmMatch[1], closeMatch[1], "Dialog action must target the same payload process that received WM_CLOSE");
+  return Number(closeMatch[1]);
+}
+
+function isProcessRunning(processId) {
+  try {
+    process.kill(processId, 0);
+    return true;
+  } catch (error) {
+    if (error && typeof error === "object" && error.code === "ESRCH") return false;
+    throw error;
+  }
 }
 
 async function readPeMachine(filePath) {

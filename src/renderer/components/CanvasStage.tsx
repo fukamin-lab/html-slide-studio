@@ -61,7 +61,8 @@ type CanvasStageProps = {
   onRefreshSelectedElements: (selected: SelectedElement[]) => void;
   onSelectOverlay: (overlayId: string, options?: SelectionOptions) => void;
   onInlineTextCommit: (selected: SelectedElement, text: string) => void;
-  onOverlayTextCommit: (overlayId: string, text: string) => void;
+  onOverlayTextCommit: (overlayId: string, text: string, options?: { historyGroup?: string }) => void;
+  onDirectTextDraftChange: (dirty: boolean) => void;
   onDeleteSelection: () => void;
   onMoveOverlay: (overlayId: string, x: number, y: number) => void;
   onMoveSelection: (domMoves: DomMoveChange[], overlayMoves: OverlayMoveChange[], options?: { historyGroup?: string }) => void;
@@ -107,6 +108,7 @@ export function CanvasStage({
   onSelectOverlay,
   onInlineTextCommit,
   onOverlayTextCommit,
+  onDirectTextDraftChange,
   onDeleteSelection,
   onMoveOverlay: _onMoveOverlay,
   onMoveSelection,
@@ -132,7 +134,6 @@ export function CanvasStage({
   const suppressInputClickRef = useRef(false);
   const lastInputClickRef = useRef<LastClick | null>(null);
   const lastOutlineClickRef = useRef<LastClick | null>(null);
-  const pendingOverlayTextEditRef = useRef<number | null>(null);
   const wheelDeltaRef = useRef(0);
   const lastWheelNavigationRef = useRef(0);
   const [interaction, setInteraction] = useState<CanvasInteraction | null>(null);
@@ -141,10 +142,8 @@ export function CanvasStage({
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
   const [pointerSelection, setPointerSelection] = useState<PointerSelection | null>(null);
   const [isInlineEditing, setIsInlineEditing] = useState(false);
+  const [editingOverlay, setEditingOverlay] = useState<{ id: string; originalText: string } | null>(null);
 
-  useEffect(() => () => {
-    if (pendingOverlayTextEditRef.current !== null) window.clearTimeout(pendingOverlayTextEditRef.current);
-  }, []);
   const prepared = useMemo(() => prepareSlideDocument(sourceHtml, sourceBaseHref), [sourceBaseHref, sourceHtml]);
   const visibleOverlays = useMemo(
     () => overlays.filter((overlay) => !overlay.hidden && (!currentSlideId || !overlay.slideId || overlay.slideId === currentSlideId)),
@@ -451,7 +450,7 @@ export function CanvasStage({
       lastInputClickRef.current = null;
       suppressInputClickRef.current = true;
       window.setTimeout(() => {
-        beginInlineEditBySelection(document, selected, onSelectElement, onInlineTextCommit, setIsInlineEditing);
+        beginInlineEditBySelection(document, selected, onSelectElement, onInlineTextCommit, onDirectTextDraftChange, setIsInlineEditing);
       }, 80);
       return;
     }
@@ -522,7 +521,7 @@ export function CanvasStage({
       active: false,
       suppressClick: false
     });
-  }, [isInlineEditing, onInlineTextCommit, onSelectElement, overlays, patches, scale, selectedElements, selectedOverlayIds]);
+  }, [isInlineEditing, onDirectTextDraftChange, onInlineTextCommit, onSelectElement, overlays, patches, scale, selectedElements, selectedOverlayIds]);
 
   const handleInputPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (!pointerSelection || event.pointerId !== pointerSelection.pointerId) {
@@ -602,8 +601,8 @@ export function CanvasStage({
       return;
     }
 
-    beginInlineEditBySelection(document, selected, onSelectElement, onInlineTextCommit, setIsInlineEditing);
-  }, [onInlineTextCommit, onSelectElement, patches, scale]);
+    beginInlineEditBySelection(document, selected, onSelectElement, onInlineTextCommit, onDirectTextDraftChange, setIsInlineEditing);
+  }, [onDirectTextDraftChange, onInlineTextCommit, onSelectElement, patches, scale]);
 
   const handleInputKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Delete" || event.key === "Backspace") {
@@ -935,12 +934,21 @@ export function CanvasStage({
         const content = event.currentTarget.querySelector<HTMLElement>(".overlay-text__content");
         if (content) {
           setIsInlineEditing(true);
+          setEditingOverlay({ id: overlay.id, originalText: overlay.text });
           onSelectOverlay(overlay.id);
-          if (pendingOverlayTextEditRef.current !== null) window.clearTimeout(pendingOverlayTextEditRef.current);
-          pendingOverlayTextEditRef.current = window.setTimeout(() => {
-            pendingOverlayTextEditRef.current = null;
-            beginOverlayTextEdit(content, overlay.id, onOverlayTextCommit, () => setIsInlineEditing(false), { caretPoint: point });
-          }, 80);
+          beginOverlayTextEdit(
+            content,
+            overlay.id,
+            onOverlayTextCommit,
+            onUndo,
+            onRedo,
+            () => {
+              setIsInlineEditing(false);
+              setEditingOverlay(null);
+              onEndHistoryGroup();
+            },
+            { caretPoint: point }
+          );
           return;
         }
       }
@@ -1012,7 +1020,7 @@ export function CanvasStage({
           }))
       });
     },
-    [isInlineEditing, measureLiveSelection, onOverlayTextCommit, onSelectOverlay, patches, selectedElements, selectedOverlayIds, visibleOverlays]
+    [isInlineEditing, measureLiveSelection, onEndHistoryGroup, onOverlayTextCommit, onRedo, onSelectOverlay, onUndo, patches, selectedElements, selectedOverlayIds, visibleOverlays]
   );
 
   const handleOverlayDoubleClick = useCallback(
@@ -1029,15 +1037,24 @@ export function CanvasStage({
         return;
       }
 
-      if (pendingOverlayTextEditRef.current !== null) {
-        window.clearTimeout(pendingOverlayTextEditRef.current);
-        pendingOverlayTextEditRef.current = null;
-      }
       setIsInlineEditing(true);
+      setEditingOverlay({ id: overlay.id, originalText: overlay.text });
       onSelectOverlay(overlay.id);
-      beginOverlayTextEdit(content, overlay.id, onOverlayTextCommit, () => setIsInlineEditing(false), { selectAll: true });
+      beginOverlayTextEdit(
+        content,
+        overlay.id,
+        onOverlayTextCommit,
+        onUndo,
+        onRedo,
+        () => {
+          setIsInlineEditing(false);
+          setEditingOverlay(null);
+          onEndHistoryGroup();
+        },
+        { selectAll: true }
+      );
     },
-    [onOverlayTextCommit, onSelectOverlay]
+    [onEndHistoryGroup, onOverlayTextCommit, onRedo, onSelectOverlay, onUndo]
   );
 
   const applyOverlayInteraction = useCallback(
@@ -1285,7 +1302,7 @@ export function CanvasStage({
               >
                 {overlay.type === "overlayText" ? (
                   <span className="overlay-text__content" data-overlay-content-id={overlay.id}>
-                    {overlay.text}
+                    {editingOverlay?.id === overlay.id ? editingOverlay.originalText : overlay.text}
                   </span>
                 ) : overlay.type === "overlayImage" ? (
                   <img
@@ -1337,7 +1354,7 @@ export function CanvasStage({
                       return;
                     }
 
-                    beginInlineEditBySelection(document, selection, onSelectElement, onInlineTextCommit, setIsInlineEditing);
+                    beginInlineEditBySelection(document, selection, onSelectElement, onInlineTextCommit, onDirectTextDraftChange, setIsInlineEditing);
                     return;
                   }
 
@@ -1357,7 +1374,7 @@ export function CanvasStage({
                     return;
                   }
 
-                  beginInlineEditBySelection(document, selection, onSelectElement, onInlineTextCommit, setIsInlineEditing);
+                  beginInlineEditBySelection(document, selection, onSelectElement, onInlineTextCommit, onDirectTextDraftChange, setIsInlineEditing);
                 }}
               >
                 {!isLocked && canStartCanvasDomMove(selection) ? (
@@ -2428,13 +2445,14 @@ function beginInlineEditBySelection(
   selected: SelectedElement,
   onSelectElement: (selected: SelectedElement | null, options?: SelectionOptions) => void,
   onInlineTextCommit: (selected: SelectedElement, text: string) => void,
+  onDirectTextDraftChange: (dirty: boolean) => void,
   setIsInlineEditing: (value: boolean) => void
 ): void {
   const element = findElementByHssTarget(document, selected.hssId, selected.selector);
   if (selected.canEditTextDirectly && isHtmlElement(element) && canInlineEdit(element)) {
     setIsInlineEditing(true);
     onSelectElement(selected);
-    beginInlineTextEdit(element, selected, onInlineTextCommit, () => setIsInlineEditing(false));
+    beginInlineTextEdit(element, selected, onInlineTextCommit, onDirectTextDraftChange, () => setIsInlineEditing(false));
   }
 }
 
@@ -2575,10 +2593,12 @@ function beginInlineTextEdit(
   element: HTMLElement,
   selected: SelectedElement,
   onCommit: (selected: SelectedElement, text: string) => void,
+  onDraftChange: (dirty: boolean) => void,
   onFinish?: () => void
 ): void {
   const originalText = element.textContent ?? "";
   let canceled = false;
+  let redoText: string | null = null;
 
   element.setAttribute("contenteditable", "true");
   element.setAttribute("spellcheck", "false");
@@ -2593,7 +2613,9 @@ function beginInlineTextEdit(
     element.style.removeProperty("outline");
     element.style.removeProperty("outline-offset");
     element.removeEventListener("blur", handleBlur);
+    element.removeEventListener("input", handleInput);
     element.removeEventListener("keydown", handleKeyDown);
+    onDraftChange(false);
     onFinish?.();
   };
 
@@ -2611,7 +2633,38 @@ function beginInlineTextEdit(
     commit();
   }
 
+  function handleInput(): void {
+    redoText = null;
+    onDraftChange((element.textContent ?? "") !== originalText);
+  }
+
   function handleKeyDown(event: KeyboardEvent): void {
+    const key = event.key.toLowerCase();
+    const isModifierPressed = event.ctrlKey || event.metaKey;
+    if (isModifierPressed && key === "z" && !event.shiftKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      const currentText = element.textContent ?? "";
+      if (currentText !== originalText) {
+        redoText = currentText;
+        element.textContent = originalText;
+        placeCaretAtEnd(element);
+        onDraftChange(false);
+      }
+      return;
+    }
+
+    if (isModifierPressed && (key === "y" || (key === "z" && event.shiftKey))) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (redoText !== null) {
+        element.textContent = redoText;
+        placeCaretAtEnd(element);
+        onDraftChange(true);
+      }
+      return;
+    }
+
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
@@ -2628,13 +2681,16 @@ function beginInlineTextEdit(
   }
 
   element.addEventListener("blur", handleBlur);
+  element.addEventListener("input", handleInput);
   element.addEventListener("keydown", handleKeyDown);
 }
 
 function beginOverlayTextEdit(
   element: HTMLElement,
   overlayId: string,
-  onCommit: (overlayId: string, text: string) => void,
+  onCommit: (overlayId: string, text: string, options?: { historyGroup?: string }) => void,
+  onUndo: () => void,
+  onRedo: () => void,
   onFinish?: () => void,
   options?: { selectAll?: boolean; caretPoint?: { x: number; y: number } }
 ): void {
@@ -2647,6 +2703,9 @@ function beginOverlayTextEdit(
 
   const originalText = element.textContent ?? "";
   let canceled = false;
+  let redoText: string | null = null;
+  let lastCommittedText = originalText;
+  const historyGroup = createInlineTextHistoryGroup(overlayId);
 
   element.setAttribute("contenteditable", "true");
   element.setAttribute("spellcheck", "false");
@@ -2662,28 +2721,73 @@ function beginOverlayTextEdit(
     element.style.removeProperty("outline");
     element.style.removeProperty("outline-offset");
     element.removeEventListener("blur", handleBlur);
+    element.removeEventListener("input", handleInput);
     element.removeEventListener("keydown", handleKeyDown);
     onFinish?.();
   };
 
   const commit = (): void => {
+    const nextText = element.textContent ?? "";
     cleanup();
     if (canceled) {
       element.textContent = originalText;
       return;
     }
 
-    onCommit(overlayId, element.textContent ?? "");
+    if (nextText !== lastCommittedText) {
+      onCommit(overlayId, nextText, { historyGroup });
+    }
   };
 
   function handleBlur(): void {
     commit();
   }
 
+  function handleInput(): void {
+    const nextText = element.textContent ?? "";
+    redoText = null;
+    lastCommittedText = nextText;
+    onCommit(overlayId, nextText, { historyGroup });
+  }
+
   function handleKeyDown(event: KeyboardEvent): void {
+    const key = event.key.toLowerCase();
+    const isModifierPressed = event.ctrlKey || event.metaKey;
+    if (isModifierPressed && key === "z" && !event.shiftKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      const currentText = element.textContent ?? "";
+      if (currentText !== originalText) {
+        redoText = currentText;
+        element.textContent = originalText;
+        placeCaretAtEnd(element);
+        lastCommittedText = originalText;
+        onUndo();
+      }
+      return;
+    }
+
+    if (isModifierPressed && (key === "y" || (key === "z" && event.shiftKey))) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (redoText !== null) {
+        const nextText = redoText;
+        redoText = null;
+        element.textContent = nextText;
+        placeCaretAtEnd(element);
+        lastCommittedText = nextText;
+        onRedo();
+      }
+      return;
+    }
+
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
+      if (lastCommittedText !== originalText) {
+        lastCommittedText = originalText;
+        onUndo();
+      }
       canceled = true;
       element.blur();
       return;
@@ -2697,7 +2801,13 @@ function beginOverlayTextEdit(
   }
 
   element.addEventListener("blur", handleBlur);
+  element.addEventListener("input", handleInput);
   element.addEventListener("keydown", handleKeyDown);
+}
+
+function createInlineTextHistoryGroup(overlayId: string): string {
+  const suffix = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `overlay-text-${overlayId}-${suffix}`;
 }
 
 function placeCaretAtPoint(element: HTMLElement, point: { x: number; y: number }): void {
@@ -2727,6 +2837,16 @@ function selectElementContents(element: HTMLElement): void {
 
   const range = element.ownerDocument.createRange();
   range.selectNodeContents(element);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function placeCaretAtEnd(element: HTMLElement): void {
+  const selection = element.ownerDocument.defaultView?.getSelection();
+  if (!selection) return;
+  const range = element.ownerDocument.createRange();
+  range.selectNodeContents(element);
+  range.collapse(false);
   selection.removeAllRanges();
   selection.addRange(range);
 }

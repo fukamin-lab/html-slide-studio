@@ -79,11 +79,17 @@ export async function fetchJson(url) {
 }
 
 export async function evaluate(cdp, expression) {
-  const response = await cdp.send("Runtime.evaluate", {
-    expression,
-    awaitPromise: true,
-    returnByValue: true
-  });
+  let response;
+  try {
+    response = await cdp.send("Runtime.evaluate", {
+      expression,
+      awaitPromise: true,
+      returnByValue: true
+    });
+  } catch (error) {
+    const preview = expression.replace(/\s+/g, " ").slice(0, 120);
+    throw new Error(`Runtime.evaluate failed for ${preview}: ${error instanceof Error ? error.message : String(error)}`);
+  }
 
   if (response.exceptionDetails) {
     throw new Error(response.exceptionDetails.text ?? "Runtime.evaluate failed");

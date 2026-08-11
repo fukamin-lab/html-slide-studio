@@ -31,7 +31,7 @@ npm run release:checksums
 - `release/HTML Slide Studio-<version>-arm64-win.zip`
 - `release/SHA256SUMS.txt`
 
-`verify:package` はunpacked payloadのPE machineがARM64 `0xAA64`であること、ライセンスと第三者表示の内容一致、Electron／Chromiumライセンス、app.asarの不要なnode_modules・内部参照不在、portable EXEの実起動、トップ画面からの8枚デモopen、preload bridge、正常終了を検査します。
+`verify:package` はunpacked payloadのPE machineがARM64 `0xAA64`であること、ライセンスと第三者表示の内容一致、Electron／Chromiumライセンス、app.asarの不要なnode_modules・内部参照不在、portable EXEの実起動、トップ画面からの8枚デモopen、preload bridge、未保存状態での終了キャンセル・再終了・破棄後の自然終了を検査します。
 
 ## 3. Human acceptance
 

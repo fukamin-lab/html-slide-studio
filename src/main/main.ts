@@ -1,10 +1,11 @@
-import { BrowserWindow, Menu, app } from "electron";
+import { BrowserWindow, Menu, app, dialog } from "electron";
 import { join } from "node:path";
 import { registerFileSystemIpc } from "./fileSystem";
 import { findLaunchHtmlPath, setPendingLaunchHtmlPath } from "./launchFiles";
 import { closePresenterWindow, registerPresenterIpc } from "./presenterWindow";
 import { configureGlobalSecurity, configureWindowSecurity } from "./security";
 import { getEditorWindow, registerEditorWindow } from "./editorWindowRegistry";
+import { registerUnsavedClosePrompt } from "./unsavedClose";
 
 const isDev = Boolean(process.env.ELECTRON_RENDERER_URL);
 const remoteDebuggingPort = process.env.HSS_REMOTE_DEBUGGING_PORT;
@@ -26,6 +27,8 @@ if (firstLaunchHtmlPath) {
 const singleInstanceLock = app.requestSingleInstanceLock();
 if (!singleInstanceLock) {
   app.quit();
+} else {
+  registerApplicationEvents();
 }
 
 function createMainWindow(): void {
@@ -52,6 +55,16 @@ function createMainWindow(): void {
   registerEditorWindow(mainWindow);
 
   configureWindowSecurity(mainWindow);
+  registerUnsavedClosePrompt(mainWindow.webContents, () => dialog.showMessageBoxSync(mainWindow, {
+    type: "warning",
+    buttons: ["保存せず終了", "キャンセル"],
+    defaultId: 1,
+    cancelId: 1,
+    title: "未保存の変更",
+    message: "保存していない変更があります。",
+    detail: "変更内容を破棄してHTML Slide Studioを終了しますか？",
+    noLink: true
+  }) === 0);
   attachRendererDiagnostics(mainWindow, "main");
 
   mainWindow.once("ready-to-show", () => {
@@ -70,53 +83,61 @@ function createMainWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
-  Menu.setApplicationMenu(null);
-  configureGlobalSecurity(isDev);
-  registerFileSystemIpc();
-  registerPresenterIpc();
-  createMainWindow();
+function registerApplicationEvents(): void {
+  app.whenReady().then(() => {
+    Menu.setApplicationMenu(null);
+    configureGlobalSecurity(isDev);
+    registerFileSystemIpc();
+    registerPresenterIpc();
+    createMainWindow();
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
+    if (process.platform === "darwin") {
+      app.on("activate", () => {
+        if (BrowserWindow.getAllWindows().length === 0) {
+          createMainWindow();
+        }
+      });
     }
   });
-});
 
-app.on("second-instance", (_event, argv) => {
-  const launchHtmlPath = findLaunchHtmlPath(argv);
-  if (launchHtmlPath) {
-    setPendingLaunchHtmlPath(launchHtmlPath);
-  }
+  app.on("before-quit", () => {
+    closePresenterWindow();
+  });
 
-  const mainWindow = getEditorWindow();
-  if (!mainWindow) {
-    createMainWindow();
-    return;
-  }
+  app.on("second-instance", (_event, argv) => {
+    const launchHtmlPath = findLaunchHtmlPath(argv);
+    if (launchHtmlPath) {
+      setPendingLaunchHtmlPath(launchHtmlPath);
+    }
 
-  if (mainWindow.isMinimized()) {
-    mainWindow.restore();
-  }
-  mainWindow.focus();
-  mainWindow.webContents.send("hss:launch-html-file");
-});
+    const mainWindow = getEditorWindow();
+    if (!mainWindow) {
+      createMainWindow();
+      return;
+    }
 
-app.on("open-file", (event, filePath) => {
-  event.preventDefault();
-  const launchHtmlPath = findLaunchHtmlPath([filePath]);
-  if (launchHtmlPath) {
-    setPendingLaunchHtmlPath(launchHtmlPath);
-    getEditorWindow()?.webContents.send("hss:launch-html-file");
-  }
-});
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.focus();
+    mainWindow.webContents.send("hss:launch-html-file");
+  });
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
-});
+  app.on("open-file", (event, filePath) => {
+    event.preventDefault();
+    const launchHtmlPath = findLaunchHtmlPath([filePath]);
+    if (launchHtmlPath) {
+      setPendingLaunchHtmlPath(launchHtmlPath);
+      getEditorWindow()?.webContents.send("hss:launch-html-file");
+    }
+  });
+
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") {
+      app.quit();
+    }
+  });
+}
 
 function attachRendererDiagnostics(window: BrowserWindow, label: string): void {
   window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl) => {

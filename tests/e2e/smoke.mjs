@@ -31,6 +31,14 @@ try {
   session = await launch("first", htmlPath);
   const { cdp } = session;
   await waitForEval(cdp, "Boolean(document.querySelector('.app-shell') && document.querySelector('iframe.slide-frame'))", 30_000);
+  await waitForEval(cdp, "document.querySelectorAll('.slide-list__item').length === 2", 30_000);
+  await waitForEval(cdp, `(() => {
+    const viewport = document.querySelector('.canvas-viewport--fit');
+    const frame = document.querySelector('iframe.slide-frame');
+    const root = frame?.contentDocument?.documentElement;
+    if (!(viewport instanceof HTMLElement) || !root || !frame?.contentWindow) return false;
+    return getComputedStyle(viewport).overflow === 'hidden' && frame.contentWindow.getComputedStyle(root).overflow === 'hidden';
+  })()`, 30_000);
 
   const startup = await evaluate(cdp, `({
     buttons: Array.from(document.querySelectorAll('.editor-toolbar button')).map((button) => button.textContent.trim()).filter(Boolean),
@@ -88,7 +96,10 @@ try {
   await clickAtSelector(cdp, '.overlay-text__content', 2);
   await waitForEval(cdp, "document.querySelectorAll('.selection-outline').length === 0 && document.querySelectorAll('.overlay-text--selected').length === 1");
   await clickAtSelector(cdp, '.overlay-text__content');
-  await waitForEval(cdp, "document.querySelector('.overlay-text__content')?.getAttribute('contenteditable') === 'true'");
+  assert.equal(await evaluate(cdp, `(() => {
+    const element = document.querySelector('.overlay-text__content');
+    return element?.getAttribute('contenteditable') === 'true' && document.activeElement === element;
+  })()`), true, "a single click on selected overlay text must immediately enter caret editing");
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' });
   await waitForEval(cdp, "document.querySelector('.overlay-text__content')?.getAttribute('contenteditable') !== 'true'");
@@ -101,9 +112,21 @@ try {
     return Boolean(element && selection && selection.toString() === element.textContent && selection.rangeCount === 1);
   })()`);
   assert.equal(wholeOverlayTextSelected, true);
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' });
+  await cdp.send('Input.insertText', { text: 'ショートカットUndo対象' });
+  await waitForEval(cdp, "document.querySelector('.overlay-text__content')?.textContent === 'ショートカットUndo対象'");
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'z', code: 'KeyZ', modifiers: 2 });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'z', code: 'KeyZ', modifiers: 2 });
+  await waitForEval(cdp, "document.querySelector('.overlay-text__content')?.textContent === 'テキストを入力'");
+  await doubleClickAtSelector(cdp, '.overlay-text__content');
+  await cdp.send('Input.insertText', { text: '新しいUndo対象' });
+  await waitForEval(cdp, "document.querySelector('#inspector-text')?.value === '新しいUndo対象' && document.querySelector('.app-status')?.textContent.includes('未保存')");
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'y', code: 'KeyY', modifiers: 2 });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'y', code: 'KeyY', modifiers: 2 });
+  assert.equal(await evaluate(cdp, "document.querySelector('.overlay-text__content')?.textContent"), "新しいUndo対象", "new input after Undo must invalidate the stale Redo value");
+  assert.equal(await evaluate(cdp, "document.querySelector('.editor-toolbar button[aria-label=\"元に戻す\"]')?.disabled"), false, "inline text input must immediately enable toolbar Undo");
+  await clickAtSelector(cdp, '.editor-toolbar button[aria-label="元に戻す"]');
   await waitForEval(cdp, "document.querySelector('.overlay-text__content')?.getAttribute('contenteditable') !== 'true'");
+  await waitForEval(cdp, "document.querySelector('#inspector-text')?.value === 'テキストを入力' && document.querySelector('.overlay-text__content')?.textContent === 'テキストを入力'");
   await setInputValue(cdp, "#inspector-text", "E2Eで追加したテキスト");
   await waitForEval(cdp, "document.querySelector('.app-status')?.textContent.includes('未保存')");
 
@@ -124,18 +147,28 @@ try {
   await waitForEval(cdp, "Boolean(document.querySelector('.check-panel'))");
   await clickButtonByText(cdp, ".editor-toolbar button", "発表");
   await waitForEval(cdp, "Boolean(document.querySelector('.audience-mode'))", 20_000);
-  const dualModeExpected = await evaluate(cdp, "document.querySelector('.app-status__message')?.textContent.includes('発表者画面と投映画面を開きました')");
+  const presentationMode = await waitForEval(cdp, `(() => {
+    const message = document.querySelector('.app-status__message')?.textContent ?? '';
+    if (message.includes('発表者画面と投映画面を開きました')) return 'dual';
+    if (message.includes('全画面表示を開始しました')) return 'single';
+    return '';
+  })()`, 20_000);
+  const dualModeExpected = presentationMode === "dual";
   if (dualModeExpected) {
-    assert.equal(await evaluate(cdp, "Boolean(document.querySelector('.audience-mode__controls'))"), false, "dual-display audience surface must not expose controls");
+    await waitForEval(cdp, "!document.querySelector('.audience-mode__controls')", 10_000);
   }
-  await evaluate(cdp, `(() => {
+  await waitForEval(cdp, `(() => {
+    const frame = document.querySelector('.audience-mode iframe');
+    return frame instanceof HTMLIFrameElement && frame.contentDocument?.readyState === 'complete';
+  })()`, 10_000);
+  await waitForEval(cdp, `(() => {
     const frame = document.querySelector('.audience-mode iframe');
     if (!(frame instanceof HTMLIFrameElement)) return false;
     window.__hssAudienceFrameWindow = frame.contentWindow;
     window.__hssAudienceFrameLoads = 0;
     frame.addEventListener('load', () => { window.__hssAudienceFrameLoads += 1; });
     return true;
-  })()`);
+  })()`, 10_000);
   let livePresenterCdp = null;
   if (dualModeExpected) {
     const presenterTarget = await waitForTarget(
@@ -146,6 +179,10 @@ try {
     livePresenterCdp = await CdpClient.connect(presenterTarget.webSocketDebuggerUrl);
     await livePresenterCdp.send("Runtime.enable");
     await waitForEval(livePresenterCdp, "Boolean(document.querySelector('.presenter-notes__editor'))", 10_000);
+    await waitForEval(livePresenterCdp, `(() => {
+      const frame = document.querySelector('.presenter-current iframe');
+      return frame instanceof HTMLIFrameElement && frame.contentDocument?.readyState === 'complete';
+    })()`, 10_000);
     await evaluate(livePresenterCdp, `(() => {
       const frame = document.querySelector('.presenter-current iframe');
       if (!(frame instanceof HTMLIFrameElement)) return false;
@@ -202,7 +239,11 @@ try {
   if (dualModeExpected) assert.equal(presenterNotesRoundTrip, true, "dual-display mode must complete the live Presenter notes round trip");
   if (dualModeExpected) assert.equal(presenterDrawingSynced, true, "dual-display mode must mirror Presenter drawing to the audience surface");
   if (dualModeExpected && livePresenterCdp) {
-    await evaluate(livePresenterCdp, "document.querySelector('.presenter-end-button')?.click()");
+    try {
+      await evaluate(livePresenterCdp, "document.querySelector('.presenter-end-button')?.click()");
+    } catch (error) {
+      if (!(error instanceof Error) || !/CDP command timed out|WebSocket|closed/i.test(error.message)) throw error;
+    }
   } else {
     await evaluate(cdp, "document.querySelector('.audience-mode')?.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }))");
     await waitForEval(cdp, "document.querySelector('.audience-mode__controls')?.classList.contains('audience-mode__controls--visible')", 5_000);
