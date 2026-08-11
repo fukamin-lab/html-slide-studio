@@ -95,6 +95,7 @@ export function App(): JSX.Element {
   const [audienceControlsVisible, setAudienceControlsVisible] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isOpening, setIsOpening] = useState(false);
+  const [hasDirectTextDraft, setHasDirectTextDraft] = useState(false);
   const pendingSlideIndexRef = useRef<number | null>(null);
   const documentOperationRef = useRef<"manual-open" | "launch-open" | "save" | null>(null);
   const documentRevisionRef = useRef(0);
@@ -102,6 +103,7 @@ export function App(): JSX.Element {
   const isDirtyRef = useRef(false);
   const slidesRef = useRef<SlideDescriptor[]>([]);
   const sourceHtmlRef = useRef("");
+  const overlaysRef = useRef<Overlay[]>([]);
   const selectionKindRef = useRef<"dom" | "overlay" | null>(null);
   const launchOpenGateRef = useRef<LaunchOpenGate<OpenDocumentPayload> | null>(null);
   const presentationVisualSnapshotRef = useRef<PresenterSnapshot | null>(null);
@@ -112,9 +114,10 @@ export function App(): JSX.Element {
   const sourceHtml = editorState.sourceHtml;
   slidesRef.current = slides;
   sourceHtmlRef.current = sourceHtml;
+  overlaysRef.current = overlays;
   const structuralEditing = useMemo(() => getSlideMutationAvailability(sourceHtml), [sourceHtml]);
   const currentSignature = useMemo(() => documentSignature(sourceHtml, patches, overlays), [overlays, patches, sourceHtml]);
-  const isDirty = Boolean(documentState) && currentSignature !== savedSignature;
+  const isDirty = Boolean(documentState) && (currentSignature !== savedSignature || hasDirectTextDraft);
   currentSignatureRef.current = currentSignature;
   isDirtyRef.current = isDirty;
   const scale = zoomMode === "fit" ? fitScale : manualScale;
@@ -175,6 +178,7 @@ export function App(): JSX.Element {
     });
     dispatchEditor({ type: "replace", sourceHtml: rehydrated.sourceHtml, patches: [], overlays: rehydrated.overlays });
     setSavedSignature(nextSignature);
+    setHasDirectTextDraft(false);
     setSlides([]);
     setCurrentSlideId(null);
     setRuntimeWarnings([]);
@@ -283,14 +287,14 @@ export function App(): JSX.Element {
   }, [applyOpenedDocument, confirmReplacingDirtyDocument]);
 
   useEffect(() => {
-    if (!isDirty) return undefined;
     const preventAccidentalClose = (event: BeforeUnloadEvent): void => {
+      if (!isDirtyRef.current) return;
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", preventAccidentalClose);
     return () => window.removeEventListener("beforeunload", preventAccidentalClose);
-  }, [isDirty]);
+  }, []);
 
   const handlePrepared = useCallback((preparedSlides: SlideDescriptor[], preparationWarnings: string[]) => {
     setSlides(preparedSlides);
@@ -528,11 +532,12 @@ export function App(): JSX.Element {
     setStatusMessage("テキストを変更しました");
   }, [patches]);
 
-  const handleOverlayTextCommit = useCallback((overlayId: string, text: string): void => {
-    const overlay = overlays.find((candidate) => candidate.id === overlayId);
+  const handleOverlayTextCommit = useCallback((overlayId: string, text: string, options?: { historyGroup?: string }): void => {
+    const currentOverlays = overlaysRef.current;
+    const overlay = currentOverlays.find((candidate) => candidate.id === overlayId);
     if (overlay?.type !== "overlayText" || overlay.locked) return;
-    dispatchEditor({ type: "edit", overlays: updateOverlay(overlays, overlayId, { text }) });
-  }, [overlays]);
+    dispatchEditor({ type: "edit", overlays: updateOverlay(currentOverlays, overlayId, { text }), historyGroup: options?.historyGroup });
+  }, []);
 
   const handleStyleChange = useCallback((style: EditableStyle, options?: { historyGroup?: string; domTargetIds?: string[]; overlayTargetIds?: string[] }): void => {
     const domFilter = options?.domTargetIds ? new Set(options.domTargetIds) : null;
@@ -750,14 +755,22 @@ export function App(): JSX.Element {
         return;
       }
       if (!(event.ctrlKey || event.metaKey)) return;
-      if (event.key.toLowerCase() === "s") { event.preventDefault(); void handleSave(); }
-      if (event.key.toLowerCase() === "o") { event.preventDefault(); void handleOpen(); }
-      if (event.key.toLowerCase() === "z" && !event.shiftKey) { event.preventDefault(); dispatchEditor({ type: "undo" }); }
-      if (event.key.toLowerCase() === "y" || (event.key.toLowerCase() === "z" && event.shiftKey)) { event.preventDefault(); dispatchEditor({ type: "redo" }); }
+      const key = event.key.toLowerCase();
+      const isEditableTarget = isNativeTextUndoTarget(event.target);
+      if (hasDirectTextDraft && isEditableTarget && (key === "s" || key === "o")) {
+        event.preventDefault();
+        setStatusMessage("文字入力を確定してから保存または開く操作をしてください");
+        return;
+      }
+      if (key === "s") { event.preventDefault(); void handleSave(); }
+      if (key === "o") { event.preventDefault(); void handleOpen(); }
+      if ((key === "z" || key === "y") && isEditableTarget) return;
+      if (key === "z" && !event.shiftKey) { event.preventDefault(); dispatchEditor({ type: "undo" }); }
+      if (key === "y" || (key === "z" && event.shiftKey)) { event.preventDefault(); dispatchEditor({ type: "redo" }); }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [endPresentation, handleOpen, handleSave, isAudienceMode, navigateSlide]);
+  }, [endPresentation, handleOpen, handleSave, hasDirectTextDraft, isAudienceMode, navigateSlide]);
 
   if (!documentState) {
     return (
@@ -780,7 +793,7 @@ export function App(): JSX.Element {
           isDirty={isDirty}
           isSaving={isSaving}
           isOpening={isOpening}
-          canUndo={editorState.past.length > 0}
+          canUndo={editorState.past.length > 0 || hasDirectTextDraft}
           canRedo={editorState.future.length > 0}
           checkIssueCount={blockingIssueCount}
           onOpen={() => void handleOpen()}
@@ -835,6 +848,7 @@ export function App(): JSX.Element {
             onSelectOverlay={handleSelectOverlay}
             onInlineTextCommit={handleInlineTextCommit}
             onOverlayTextCommit={handleOverlayTextCommit}
+            onDirectTextDraftChange={setHasDirectTextDraft}
             onDeleteSelection={handleDeleteSelection}
             onMoveOverlay={(id, x, y) => dispatchEditor({ type: "edit", overlays: updateOverlay(overlays, id, { x, y }) })}
             onMoveSelection={handleMoveSelection}
@@ -1028,6 +1042,11 @@ function clampZoom(value: number): number {
 
 function fileNameFromPath(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
+}
+
+function isNativeTextUndoTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.isContentEditable || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
 }
 
 function createOverlayId(): string {
