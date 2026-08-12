@@ -62,6 +62,79 @@ try {
   assert.equal(startup.canvasFitNoScroll, true);
   assert.equal(startup.bridge, true);
 
+  let sourceHeadingPoint = await sourceTextCaretPoint(cdp, "#fixture-title", 2);
+  await clickAtPoint(cdp, sourceHeadingPoint.x, sourceHeadingPoint.y);
+  await waitForEval(cdp, "document.querySelectorAll('.selection-outline').length === 1 && document.querySelectorAll('.selection-move-edge').length === 4");
+
+  const sourceBoxBeforeMove = await sourceElementBox(cdp, "#fixture-title");
+  await dragSelector(cdp, ".selection-move-edge--top", 24, 12);
+  await waitForEval(cdp, `(() => {
+    const frame = document.querySelector('iframe.slide-frame');
+    const heading = frame?.contentDocument?.querySelector('#fixture-title');
+    const box = heading?.getBoundingClientRect();
+    return Boolean(box && (Math.abs(box.left - ${sourceBoxBeforeMove.left}) > 3 || Math.abs(box.top - ${sourceBoxBeforeMove.top}) > 3));
+  })()`);
+  await clickAtSelector(cdp, '.editor-toolbar button[aria-label="元に戻す"]');
+  await waitForSourceBox(cdp, "#fixture-title", sourceBoxBeforeMove);
+
+  const sourceBoxBeforeResize = await sourceElementBox(cdp, "#fixture-title");
+  await dragSelector(cdp, ".selection-handle--se", 32, 18);
+  await waitForEval(cdp, `(() => {
+    const frame = document.querySelector('iframe.slide-frame');
+    const heading = frame?.contentDocument?.querySelector('#fixture-title');
+    return (heading?.getBoundingClientRect().width ?? 0) > ${sourceBoxBeforeResize.width + 3};
+  })()`);
+  await clickAtSelector(cdp, '.editor-toolbar button[aria-label="元に戻す"]');
+  await waitForSourceBox(cdp, "#fixture-title", sourceBoxBeforeResize);
+
+  sourceHeadingPoint = await sourceTextCaretPoint(cdp, "#fixture-title", 2);
+  const sourceBoxBeforeEdit = await sourceElementBox(cdp, "#fixture-title");
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 700));
+  await clickAtPoint(cdp, sourceHeadingPoint.x, sourceHeadingPoint.y);
+  await waitForEval(cdp, `(() => {
+    const frame = document.querySelector('iframe.slide-frame');
+    const heading = frame?.contentDocument?.querySelector('#fixture-title');
+    const selection = frame?.contentWindow?.getSelection();
+    return heading?.getAttribute('contenteditable') === 'true' && frame?.contentDocument?.activeElement === heading && Boolean(selection?.isCollapsed) && selection?.anchorOffset === 2;
+  })()`);
+  assert.deepEqual(await sourceElementBox(cdp, "#fixture-title"), sourceBoxBeforeEdit, "an interior click must enter text editing without moving the source element");
+  await cdp.send('Input.insertText', { text: 'を' });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
+  await waitForEval(cdp, `document.querySelector('iframe.slide-frame')?.contentDocument?.querySelector('#fixture-title')?.textContent === 'AI講義のはじめに'`);
+  await waitForEval(cdp, `document.querySelector('.editor-toolbar__document span:last-child')?.textContent === '保存済み'`);
+  assert.equal(await evaluate(cdp, "document.querySelector('.editor-toolbar button[aria-label=\"元に戻す\"]')?.disabled"), true, "typing back to the session original must remove the no-op history entry");
+
+  await cdp.send('Input.insertText', { text: 'を' });
+  await waitForEval(cdp, `document.querySelector('iframe.slide-frame')?.contentDocument?.querySelector('#fixture-title')?.textContent === 'AIを講義のはじめに'`);
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'z', code: 'KeyZ', modifiers: 2 });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'z', code: 'KeyZ', modifiers: 2 });
+  await waitForEval(cdp, `(() => {
+    const heading = document.querySelector('iframe.slide-frame')?.contentDocument?.querySelector('#fixture-title');
+    return heading?.textContent === 'AI講義のはじめに' && heading?.getAttribute('contenteditable') !== 'true';
+  })()`);
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'y', code: 'KeyY', modifiers: 2 });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'y', code: 'KeyY', modifiers: 2 });
+  await waitForEval(cdp, `document.querySelector('iframe.slide-frame')?.contentDocument?.querySelector('#fixture-title')?.textContent === 'AIを講義のはじめに'`);
+  assert.equal(await evaluate(cdp, "document.querySelector('.editor-toolbar button[aria-label=\"元に戻す\"]')?.disabled"), false, "source text input must enable toolbar Undo immediately");
+  await clickAtSelector(cdp, '.editor-toolbar button[aria-label="元に戻す"]');
+  await waitForEval(cdp, `document.querySelector('iframe.slide-frame')?.contentDocument?.querySelector('#fixture-title')?.textContent === 'AI講義のはじめに'`);
+
+  const paragraphPoint = await sourceTextCaretPoint(cdp, "p[aria-labelledby='fixture-title']", 2);
+  await clickAtPoint(cdp, paragraphPoint.x, paragraphPoint.y);
+  sourceHeadingPoint = await sourceTextCaretPoint(cdp, "#fixture-title", 2);
+  await clickAtPoint(cdp, sourceHeadingPoint.x, sourceHeadingPoint.y);
+  await waitForEval(cdp, "document.querySelectorAll('.selection-outline').length === 1");
+  await clickAtPoint(cdp, sourceHeadingPoint.x, sourceHeadingPoint.y);
+  await waitForEval(cdp, `(() => {
+    const frame = document.querySelector('iframe.slide-frame');
+    const heading = frame?.contentDocument?.querySelector('#fixture-title');
+    return heading?.getAttribute('contenteditable') === 'true' && frame?.contentWindow?.getSelection()?.toString() === heading?.textContent;
+  })()`);
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' });
+  await waitForEval(cdp, `document.querySelector('iframe.slide-frame')?.contentDocument?.querySelector('#fixture-title')?.getAttribute('contenteditable') !== 'true'`);
+
   await clickAtSelector(cdp, '.slide-list__item:nth-child(2) .slide-list__thumb');
   await waitForEval(cdp, "document.querySelector('.slide-list__item:nth-child(2)')?.classList.contains('slide-list__item--active')");
   await clickAtSelector(cdp, '.slide-list__item:nth-child(1) .slide-list__thumb');
@@ -392,6 +465,65 @@ async function shutdown(current) {
 async function click(cdp, selector) {
   const clicked = await evaluate(cdp, `(() => { const element = document.querySelector(${JSON.stringify(selector)}); if (!(element instanceof HTMLElement)) return false; element.click(); return true; })()`);
   assert.equal(clicked, true, `click target not found: ${selector}`);
+}
+
+async function sourceTextCaretPoint(cdp, selector, offset) {
+  const point = await evaluate(cdp, `(() => {
+    const frame = document.querySelector('iframe.slide-frame');
+    const element = frame?.contentDocument?.querySelector(${JSON.stringify(selector)});
+    const textNode = element?.firstChild;
+    if (!(frame instanceof HTMLIFrameElement) || !frame.contentWindow || !(element instanceof frame.contentWindow.HTMLElement) || !(textNode instanceof frame.contentWindow.Text)) return null;
+    const range = frame.contentDocument.createRange();
+    range.setStart(textNode, Math.max(0, ${offset} - 1));
+    range.setEnd(textNode, ${offset});
+    const caretRect = range.getBoundingClientRect();
+    const frameRect = frame.getBoundingClientRect();
+    const scale = frameRect.width / 1366;
+    return {
+      x: frameRect.left + (caretRect.right - 1) * scale,
+      y: frameRect.top + (caretRect.top + caretRect.height / 2) * scale
+    };
+  })()`);
+  assert.ok(point, `source text caret target not found: ${selector}`);
+  return point;
+}
+
+async function sourceElementBox(cdp, selector) {
+  const box = await evaluate(cdp, `(() => {
+    const frame = document.querySelector('iframe.slide-frame');
+    const element = frame?.contentDocument?.querySelector(${JSON.stringify(selector)});
+    if (!(frame instanceof HTMLIFrameElement) || !frame.contentWindow || !(element instanceof frame.contentWindow.HTMLElement)) return null;
+    const rect = element.getBoundingClientRect();
+    return { left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) };
+  })()`);
+  assert.ok(box, `source element not found: ${selector}`);
+  return box;
+}
+
+async function waitForSourceBox(cdp, selector, expected) {
+  await waitForEval(cdp, `(() => {
+    const frame = document.querySelector('iframe.slide-frame');
+    const element = frame?.contentDocument?.querySelector(${JSON.stringify(selector)});
+    const rect = element?.getBoundingClientRect();
+    return Boolean(rect
+      && Math.abs(rect.left - ${expected.left}) <= 1
+      && Math.abs(rect.top - ${expected.top}) <= 1
+      && Math.abs(rect.width - ${expected.width}) <= 1
+      && Math.abs(rect.height - ${expected.height}) <= 1);
+  })()`);
+}
+
+async function dragSelector(cdp, selector, deltaX, deltaY) {
+  const point = await evaluate(cdp, `(() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!(element instanceof HTMLElement)) return null;
+    const rect = element.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  })()`);
+  assert.ok(point, `drag target not found: ${selector}`);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', buttons: 1, clickCount: 1 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x + deltaX, y: point.y + deltaY, button: 'left', buttons: 1 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x + deltaX, y: point.y + deltaY, button: 'left', buttons: 0, clickCount: 1 });
 }
 
 async function clickAtSelector(cdp, selector, modifiers = 0) {
