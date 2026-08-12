@@ -36,7 +36,7 @@ import {
   PRESENTATION_COLOR_OPTIONS
 } from "./presentationInk";
 import { createEmptyEditorHistory, editorHistoryReducer } from "./state/editorHistory";
-import type { EditableStyle, Overlay, OverlayImage, OverlayText, PatchManifest } from "./types/patches";
+import type { EditableStyle, Overlay, OverlayImage, OverlayText, Patch, PatchManifest } from "./types/patches";
 import type { PresentationColor, PresentationDrawEvent, PresentationTool, PresenterCommand, PresenterSnapshot } from "./types/presenter";
 import type { SlideDescriptor } from "./types/project";
 import type { ReviewIssue, ReviewSnapshot, ReviewTarget } from "./types/review";
@@ -103,6 +103,7 @@ export function App(): JSX.Element {
   const isDirtyRef = useRef(false);
   const slidesRef = useRef<SlideDescriptor[]>([]);
   const sourceHtmlRef = useRef("");
+  const patchesRef = useRef<Patch[]>([]);
   const overlaysRef = useRef<Overlay[]>([]);
   const selectionKindRef = useRef<"dom" | "overlay" | null>(null);
   const launchOpenGateRef = useRef<LaunchOpenGate<OpenDocumentPayload> | null>(null);
@@ -114,6 +115,7 @@ export function App(): JSX.Element {
   const sourceHtml = editorState.sourceHtml;
   slidesRef.current = slides;
   sourceHtmlRef.current = sourceHtml;
+  patchesRef.current = patches;
   overlaysRef.current = overlays;
   const structuralEditing = useMemo(() => getSlideMutationAvailability(sourceHtml), [sourceHtml]);
   const currentSignature = useMemo(() => documentSignature(sourceHtml, patches, overlays), [overlays, patches, sourceHtml]);
@@ -524,13 +526,13 @@ export function App(): JSX.Element {
     dispatchEditor({ type: "edit", patches: upsertTextPatch(patches, selectedElement, text) });
   }, [overlays, patches, selectedElement, selectedOverlay]);
 
-  const handleInlineTextCommit = useCallback((selected: SelectedElement, text: string): void => {
+  const handleInlineTextCommit = useCallback((selected: SelectedElement, text: string, options?: { historyGroup?: string }): void => {
     if (selected.locked || !selected.canEditTextDirectly) return;
     setSelectedElement({ ...selected, textContent: text });
     setSelectedElements((current) => replaceSelection(current, { ...selected, textContent: text }));
-    dispatchEditor({ type: "edit", patches: upsertTextPatch(patches, selected, text) });
+    dispatchEditor({ type: "edit", patches: upsertTextPatch(patchesRef.current, selected, text), historyGroup: options?.historyGroup });
     setStatusMessage("テキストを変更しました");
-  }, [patches]);
+  }, []);
 
   const handleOverlayTextCommit = useCallback((overlayId: string, text: string, options?: { historyGroup?: string }): void => {
     const currentOverlays = overlaysRef.current;

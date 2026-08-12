@@ -22,9 +22,7 @@ export function applyPatchesToDocument(document: Document, patches: Patch[]): st
         continue;
       }
 
-      if (!element.hasAttribute(ORIGINAL_TEXT_ATTR)) {
-        element.setAttribute(ORIGINAL_TEXT_ATTR, element.innerHTML);
-      }
+      rememberOriginalTextForPatch(element);
       element.textContent = patch.text;
       continue;
     }
@@ -54,6 +52,12 @@ export function applyPatchesToDocument(document: Document, patches: Patch[]): st
   }
 
   return warnings;
+}
+
+export function rememberOriginalTextForPatch(element: Element): void {
+  if (!element.hasAttribute(ORIGINAL_TEXT_ATTR)) {
+    element.setAttribute(ORIGINAL_TEXT_ATTR, element.innerHTML);
+  }
 }
 
 function sanitizePatchStyleForElement(element: Element, style: EditableStyle): EditableStyle {

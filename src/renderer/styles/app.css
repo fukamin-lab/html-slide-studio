@@ -276,6 +276,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .selection-outline--secondary { border-color: #83a9cc; }
 .selection-outline--locked { border-style: dashed; border-color: #999; }
 .selection-move-handle { position: absolute; inset: 0; cursor: move; }
+.selection-move-edge { position: absolute; z-index: 1; cursor: move; }
+.selection-move-edge--top, .selection-move-edge--bottom { left: 5px; right: 5px; height: 7px; }
+.selection-move-edge--top { top: -4px; }
+.selection-move-edge--bottom { bottom: -4px; }
+.selection-move-edge--left, .selection-move-edge--right { top: 5px; bottom: 5px; width: 7px; }
+.selection-move-edge--left { left: -4px; }
+.selection-move-edge--right { right: -4px; }
 .selection-handle, .overlay-resize-handle {
   position: absolute;
   z-index: 2;
