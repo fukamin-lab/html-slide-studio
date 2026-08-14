@@ -25,6 +25,7 @@ export function createLaunchOpenGate<T>({ consume, apply, onConsumeStart, onCons
     if (drainPromise) return drainPromise;
 
     drainPromise = (async () => {
+      let consumedValues = 0;
       while (!disposed && blockingOperations === 0) {
         if (deferredValue !== null) {
           const value = deferredValue;
@@ -33,17 +34,21 @@ export function createLaunchOpenGate<T>({ consume, apply, onConsumeStart, onCons
           continue;
         }
         if (!pendingNotification) break;
+        if (consumedValues >= 64) break;
 
         pendingNotification = false;
         onConsumeStart();
         try {
           const value = await consume();
           if (disposed || value === null) continue;
+          consumedValues += 1;
           if (blockingOperations > 0) {
             deferredValue = value;
+            pendingNotification = true;
             break;
           }
           apply(value);
+          pendingNotification = true;
         } finally {
           onConsumeEnd();
         }

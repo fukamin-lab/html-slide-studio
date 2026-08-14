@@ -4,16 +4,17 @@ import { createServer } from "node:net";
 import { mkdtemp, open, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { CdpClient, evaluate, waitForEval, waitForTarget } from "../tests/e2e/lib/cdp.mjs";
 import { resolveLocalEndpoint } from "./lib/local-endpoint.mjs";
 
 const projectRoot = process.cwd();
-const { version } = JSON.parse(await readFile(resolve(projectRoot, "package.json"), "utf8"));
+const packageJson = JSON.parse(await readFile(resolve(projectRoot, "package.json"), "utf8"));
 const portablePath = resolve("release/HTML Slide Studio.exe");
 const payloadPath = resolve("release/win-arm64-unpacked/HTML Slide Studio.exe");
-const zipPath = resolve(`release/HTML Slide Studio-${version}-arm64-win.zip`);
+const zipPath = resolve("release/HTML Slide Studio-" + packageJson.version + "-arm64-win.zip");
 const endpoint = resolveLocalEndpoint(projectRoot);
+
 assert.equal(await readPeMachine(payloadPath), 0xaa64, "Packaged Electron payload must be native Windows ARM64");
+assertElectronFuses(payloadPath);
 assert.deepEqual(
   await readFile(resolve("release/win-arm64-unpacked/resources/LICENSE")),
   await readFile(resolve("LICENSE")),
@@ -24,11 +25,16 @@ assert.deepEqual(
   await readFile(resolve("THIRD_PARTY_NOTICES.md")),
   "Packaged app must include third-party notices"
 );
+
 const zipEntries = execFileSync("tar", ["-tf", zipPath], { encoding: "utf8" }).split(/\r?\n/);
-assert.equal(zipEntries.includes("resources/LICENSE"), true, "ZIP must include the project MIT license");
-assert.equal(zipEntries.includes("resources/THIRD_PARTY_NOTICES.md"), true, "ZIP must include third-party notices");
-assert.equal(zipEntries.includes("LICENSE.electron.txt"), true, "ZIP must include the Electron license");
-assert.equal(zipEntries.includes("LICENSES.chromium.html"), true, "ZIP must include Chromium licenses");
+for (const entry of [
+  "resources/LICENSE",
+  "resources/THIRD_PARTY_NOTICES.md",
+  "LICENSE.electron.txt",
+  "LICENSES.chromium.html"
+]) {
+  assert.equal(zipEntries.includes(entry), true, "ZIP must include " + entry);
+}
 const electronLicense = await readFile(resolve("release/win-arm64-unpacked/LICENSE.electron.txt"));
 const chromiumLicenses = await readFile(resolve("release/win-arm64-unpacked/LICENSES.chromium.html"));
 assert.equal(electronLicense.length > 100, true, "Electron license must be nonempty");
@@ -46,38 +52,54 @@ assert.deepEqual(
   "ZIP third-party notices must match the source notices"
 );
 
-function readZipEntry(archivePath, entryName) {
-  return execFileSync("tar", ["-xOf", archivePath, entryName], {
-    maxBuffer: 64 * 1024 * 1024
-  });
-}
-
 const asarPath = resolve("release/win-arm64-unpacked/resources/app.asar");
-const asarList = execFileSync(process.execPath, [resolve("node_modules/@electron/asar/bin/asar.js"), "list", asarPath], { encoding: "utf8" });
+const asarList = execFileSync(
+  process.execPath,
+  [resolve("node_modules/@electron/asar/bin/asar.js"), "list", asarPath],
+  { encoding: "utf8" }
+);
 assert.equal(/(?:^|[\\/])node_modules(?:[\\/]|$)/m.test(asarList), false, "Packaged app.asar must not contain node_modules");
+assert.match(asarList, /out[\\/]preload[\\/]preload\.cjs/, "Packaged app.asar must include the editor preload");
+assert.match(asarList, /out[\\/]preload[\\/]presenter\.cjs/, "Packaged app.asar must include the presenter preload");
 const asarBytes = await readFile(asarPath);
-for (const forbidden of ["C:\\dev\\fukamin", ["HTML Slide Studio", "Legacy"].join(" "), "PROJECT_ID.json", "LOCAL_ENDPOINT.json"]) {
-  assert.equal(asarBytes.includes(Buffer.from(forbidden, "utf8")), false, `Packaged app.asar contains internal reference: ${forbidden}`);
+for (const forbidden of [
+  "C:\\dev\\fukamin",
+  ["HTML Slide Studio", "Legacy"].join(" "),
+  "PROJECT_ID.json",
+  "LOCAL_ENDPOINT.json"
+]) {
+  assert.equal(
+    asarBytes.includes(Buffer.from(forbidden, "utf8")),
+    false,
+    "Packaged app.asar contains internal reference: " + forbidden
+  );
 }
-await assertPortAvailable(endpoint.host, endpoint.port);
 
+await assertPortAvailable(endpoint.host, endpoint.port);
 const verificationRoot = await mkdtemp(join(tmpdir(), "hss-package-"));
-assert.equal(resolve(verificationRoot).startsWith(resolve(tmpdir())), true, "verification directory must remain under the system temp directory");
+assert.equal(resolve(verificationRoot).startsWith(resolve(tmpdir())), true, "verification directory must remain under system temp");
 assert.match(basename(verificationRoot), /^hss-package-/, "verification directory must use the owned prefix");
 const profilePath = join(verificationRoot, "profile");
 
 const logs = [];
 let child = null;
-let cdp = null;
+let helper = null;
 let verificationResult = null;
 try {
-  child = spawn(portablePath, [], {
+  await verifySecuritySensitiveSwitchRejected(portablePath, endpoint, join(verificationRoot, "rejected-profile"));
+
+  const ignoredEnvironmentPort = endpoint.port + 1;
+  await assertPortAvailable(endpoint.host, ignoredEnvironmentPort);
+  child = spawn(portablePath, ["--user-data-dir=" + profilePath], {
     cwd: projectRoot,
     env: {
       ...process.env,
-      HSS_REMOTE_DEBUGGING_PORT: String(endpoint.port),
-      HSS_USER_DATA_DIR: profilePath,
-      ELECTRON_ENABLE_LOGGING: "1"
+      HSS_REMOTE_DEBUGGING_PORT: String(ignoredEnvironmentPort),
+      HSS_USER_DATA_DIR: join(verificationRoot, "ignored-environment-profile"),
+      ELECTRON_RENDERER_URL: "https://renderer-environment-must-be-ignored.invalid",
+      ELECTRON_ENABLE_LOGGING: "1",
+      ELECTRON_RUN_AS_NODE: "1",
+      NODE_OPTIONS: "--inspect=127.0.0.1:" + ignoredEnvironmentPort
     },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true
@@ -85,148 +107,80 @@ try {
   child.stdout.on("data", (chunk) => logs.push(chunk.toString()));
   child.stderr.on("data", (chunk) => logs.push(chunk.toString()));
 
-  const target = await waitForTarget(
-    `http://${endpoint.host}:${endpoint.port}`,
-    (candidate) => candidate.type === "page" && candidate.title.includes("HTML Slide Studio"),
-    120_000
-  );
-  cdp = await CdpClient.connect(target.webSocketDebuggerUrl);
-  await cdp.send("Runtime.enable");
-  await waitForEval(cdp, "Boolean(document.querySelector('.welcome-screen'))", 30_000);
-  const clickedDemo = await evaluate(cdp, `(() => {
-    const button = Array.from(document.querySelectorAll('.welcome-screen__actions button'))
-      .find((candidate) => candidate.textContent?.trim() === 'デモを開く');
-    if (!(button instanceof HTMLButtonElement)) return false;
-    button.click();
-    return true;
-  })()`);
-  assert.equal(clickedDemo, true, "Packaged Welcome screen must expose the demo action");
-  await waitForEval(cdp, "document.querySelectorAll('.slide-list__item').length === 8", 30_000);
-  const state = await evaluate(cdp, `({
-    title: document.title,
-    shell: Boolean(document.querySelector(".app-shell")),
-    slides: document.querySelectorAll(".slide-list__item").length,
-    documentName: document.querySelector(".editor-toolbar__document strong")?.textContent,
-    bridge: ["openHtmlDocument", "openDemoDocument", "saveHtmlDocument", "importDocumentImage", "openPresenter"]
-      .every((name) => typeof window.hss?.[name] === "function")
-  })`);
-  assert.deepEqual(state, {
-    title: "HTML Slide Studio",
-    shell: true,
-    slides: 8,
-    documentName: "html-slide-studio-demo.html",
-    bridge: true
+  const uiLogs = [];
+  helper = spawn("powershell.exe", [
+    "-NoProfile",
+    "-ExecutionPolicy", "Bypass",
+    "-File", resolve("scripts/verify-packaged-ui.ps1"),
+    "-RootProcessId", String(child.pid),
+    "-TimeoutMs", "120000"
+  ], {
+    cwd: projectRoot,
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true
   });
-  const addedOverlay = await evaluate(cdp, `(() => {
-    const button = Array.from(document.querySelectorAll('.editor-toolbar button'))
-      .find((candidate) => candidate.textContent?.trim() === 'テキスト');
-    if (!(button instanceof HTMLButtonElement)) return false;
-    button.click();
-    return true;
-  })()`);
-  assert.equal(addedOverlay, true, "Packaged app must allow adding an inline text object before close verification");
-  await waitForEval(cdp, "Boolean(document.querySelector('.overlay-text--selected .overlay-text__content'))", 10_000);
-  const overlayPoint = await evaluate(cdp, `(() => {
-    const element = document.querySelector('.overlay-text--selected .overlay-text__content');
-    if (!(element instanceof HTMLElement)) return null;
-    const rect = element.getBoundingClientRect();
-    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-  })()`);
-  assert.ok(overlayPoint, "Packaged inline text object must have a clickable surface");
-  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: overlayPoint.x, y: overlayPoint.y, button: "left", buttons: 1, clickCount: 1 });
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: overlayPoint.x, y: overlayPoint.y, button: "left", buttons: 0, clickCount: 1 });
-  await waitForEval(cdp, "document.querySelector('.overlay-text__content')?.getAttribute('contenteditable') === 'true'", 10_000);
-  const dirtyEditApplied = await evaluate(cdp, `(() => {
-    const editor = document.querySelector('.overlay-text__content');
-    if (!(editor instanceof HTMLElement)) return false;
-    editor.textContent = '終了確認テスト';
-    editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: '終了確認テスト' }));
-    return true;
-  })()`);
-  assert.equal(dirtyEditApplied, true, "Packaged app must apply an active inline text edit before close verification");
-  await waitForEval(cdp, "document.querySelector('#inspector-text')?.value === '終了確認テスト' && document.querySelector('.app-status')?.textContent.includes('未保存')", 10_000);
-  verificationResult = { pass: true, executable: portablePath, payloadMachine: "0xAA64", endpoint, packagedDemoOpenedFromWelcome: true, state };
+  helper.stdout.on("data", (chunk) => uiLogs.push(chunk.toString()));
+  helper.stderr.on("data", (chunk) => uiLogs.push(chunk.toString()));
+  const uiExit = await waitForProcessExit(helper, 130_000, "Packaged UI verifier");
+  const uiLog = uiLogs.join("");
+  assert.equal(uiExit.code, 0, "Packaged Windows accessibility verification failed:\n" + uiLog);
+  const uiState = parseLastJsonLine(uiLog);
+  assert.deepEqual(
+    {
+      pass: uiState.pass,
+      packagedDemoOpenedFromWelcome: uiState.packagedDemoOpenedFromWelcome,
+      documentName: uiState.documentName,
+      slideCount: uiState.slideCount,
+      dirtyTextAdded: uiState.dirtyTextAdded
+    },
+    {
+      pass: true,
+      packagedDemoOpenedFromWelcome: true,
+      documentName: "html-slide-studio-demo.html",
+      slideCount: 8,
+      dirtyTextAdded: true
+    }
+  );
+  await assertPortAvailable(endpoint.host, ignoredEnvironmentPort);
+
+  verificationResult = {
+    pass: true,
+    executable: portablePath,
+    payloadMachine: "0xAA64",
+    packagedDebuggingSwitchRejected: true,
+    packagedEnvironmentInjectionIgnored: true,
+    packagedDemoOpenedFromWelcome: true,
+    state: uiState
+  };
+
+  assert.equal(isChildRunning(child), true, "Portable launcher exited before native window-close verification");
+  const cancelLog = await confirmUnsavedClose(child, "Cancel");
+  const cancelPayloadPid = assertDialogProcessIds(cancelLog, "Cancel");
+  assert.equal(isChildRunning(child), true, "Packaged app must remain running after canceling the unsaved-close dialog");
+  assert.equal(isProcessRunning(cancelPayloadPid), true, "Packaged payload process must remain running after canceling close");
+
+  const discardLog = await confirmUnsavedClose(child, "Discard");
+  const discardPayloadPid = assertDialogProcessIds(discardLog, "Discard");
+  await waitForProcessExit(child, 30_000, "Packaged app");
+  assert.equal(isProcessRunning(discardPayloadPid), false, "Packaged payload process must exit after discarding changes");
+  verificationResult.nativeDirtyWindowClose = true;
+  verificationResult.nativeUnsavedDialogCancelVerified = true;
+  verificationResult.nativeUnsavedDialogConfirmed = true;
 } catch (error) {
   console.error(logs.join(""));
   throw error;
 } finally {
   let terminationError = null;
-  let dialogConfirmer = null;
-  const cancelDialogLogs = [];
-  const discardDialogLogs = [];
-  try {
-    if (cdp) {
-      assert.equal(isChildRunning(child), true, "Portable launcher exited before native window-close verification");
-      dialogConfirmer = spawn("powershell.exe", [
-        "-NoProfile",
-        "-ExecutionPolicy", "Bypass",
-        "-File", resolve("scripts/confirm-unsaved-close.ps1"),
-        "-RootProcessId", String(child.pid),
-        "-Action", "Cancel",
-        "-TimeoutMs", "20000"
-      ], {
-        cwd: projectRoot,
-        stdio: ["ignore", "pipe", "pipe"],
-        windowsHide: true
-      });
-      dialogConfirmer.stdout.on("data", (chunk) => cancelDialogLogs.push(chunk.toString()));
-      dialogConfirmer.stderr.on("data", (chunk) => cancelDialogLogs.push(chunk.toString()));
-      const cancelExit = await waitForProcessExit(dialogConfirmer, 25_000, "Unsaved-close cancel confirmer");
-      const cancelLog = cancelDialogLogs.join("");
-      assert.equal(cancelExit.code, 0, `Owned unsaved-close cancel action was not confirmed:\n${cancelLog}`);
-      const cancelPayloadPid = assertDialogProcessIds(cancelLog, "Cancel");
-      assert.equal(isChildRunning(child), true, "Packaged app must remain running after canceling the unsaved-close dialog");
-      assert.equal(isProcessRunning(cancelPayloadPid), true, "Packaged payload window process must remain running after canceling close");
-      await waitForEval(cdp, "document.querySelector('.app-status')?.textContent.includes('未保存')", 10_000);
-
-      dialogConfirmer = spawn("powershell.exe", [
-        "-NoProfile",
-        "-ExecutionPolicy", "Bypass",
-        "-File", resolve("scripts/confirm-unsaved-close.ps1"),
-        "-RootProcessId", String(child.pid),
-        "-Action", "Discard",
-        "-TimeoutMs", "20000"
-      ], {
-        cwd: projectRoot,
-        stdio: ["ignore", "pipe", "pipe"],
-        windowsHide: true
-      });
-      dialogConfirmer.stdout.on("data", (chunk) => discardDialogLogs.push(chunk.toString()));
-      dialogConfirmer.stderr.on("data", (chunk) => discardDialogLogs.push(chunk.toString()));
-      const discardExit = await waitForProcessExit(dialogConfirmer, 25_000, "Unsaved-close discard confirmer");
-      const discardLog = discardDialogLogs.join("");
-      assert.equal(discardExit.code, 0, `Owned unsaved-close discard action was not confirmed:\n${discardLog}`);
-      const discardPayloadPid = assertDialogProcessIds(discardLog, "Discard");
-      await waitForProcessExit(child, 30_000, "Packaged app");
-      assert.equal(isProcessRunning(discardPayloadPid), false, "Packaged payload window process must exit after discarding changes");
-      if (verificationResult) {
-        verificationResult.nativeDirtyWindowClose = true;
-        verificationResult.nativeUnsavedDialogCancelVerified = true;
-        verificationResult.nativeUnsavedDialogConfirmed = true;
-      }
-    }
-  } catch (error) {
-    terminationError = error;
-  } finally {
-    try { cdp?.close(); } catch {}
-    if (dialogConfirmer?.pid && isChildRunning(dialogConfirmer)) {
+  for (const item of [[helper, "Packaged UI verifier"], [child, "Packaged app"]]) {
+    const processToStop = item[0];
+    const label = item[1];
+    if (processToStop?.pid && isChildRunning(processToStop)) {
       try {
-        execFileSync("taskkill", ["/pid", String(dialogConfirmer.pid), "/t", "/f"], { stdio: "ignore" });
-        await waitForProcessExit(dialogConfirmer, 10_000, "Dialog confirmer cleanup");
+        execFileSync("taskkill", ["/pid", String(processToStop.pid), "/t", "/f"], { stdio: "ignore" });
+        await waitForProcessExit(processToStop, 30_000, label + " cleanup");
       } catch (error) {
         terminationError ??= error;
       }
-    }
-    if (child?.pid && isChildRunning(child)) {
-      try {
-        execFileSync("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" });
-        await waitForProcessExit(child, 30_000, "Packaged app cleanup");
-      } catch (error) {
-        terminationError ??= error;
-      }
-    }
-    if (isChildRunning(child)) {
-      terminationError ??= new Error("Packaged app process did not terminate");
     }
   }
   await rm(verificationRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
@@ -235,13 +189,113 @@ try {
 
 console.log(JSON.stringify(verificationResult, null, 2));
 
+function readZipEntry(archivePath, entryName) {
+  return execFileSync("tar", ["-xOf", archivePath, entryName], { maxBuffer: 64 * 1024 * 1024 });
+}
+
+function assertElectronFuses(executablePath) {
+  const report = execFileSync(
+    process.execPath,
+    [resolve("node_modules/@electron/fuses/dist/bin.js"), "read", "--app", executablePath],
+    { encoding: "utf8" }
+  );
+  const expected = {
+    RunAsNode: "Disabled",
+    EnableCookieEncryption: "Enabled",
+    EnableNodeOptionsEnvironmentVariable: "Disabled",
+    EnableNodeCliInspectArguments: "Disabled",
+    EnableEmbeddedAsarIntegrityValidation: "Enabled",
+    OnlyLoadAppFromAsar: "Enabled",
+    LoadBrowserProcessSpecificV8Snapshot: "Disabled",
+    GrantFileProtocolExtraPrivileges: "Enabled"
+  };
+  for (const [name, state] of Object.entries(expected)) {
+    assert.match(report, new RegExp("\\b" + name + " is " + state + "\\b"), "Unexpected Electron fuse: " + name + "\\n" + report);
+  }
+}
+
+async function verifySecuritySensitiveSwitchRejected(executablePath, localEndpoint, rejectedProfilePath) {
+  for (const [label, securitySwitch] of [
+    ["remote debugging", "--remote-debugging-port=" + localEndpoint.port],
+    ["slash no-sandbox", "/no-sandbox"],
+    ["single-dash no-sandbox", "-no-sandbox"]
+  ]) {
+    const profilePath = `${rejectedProfilePath}-${label.replaceAll(" ", "-")}`;
+    const rejectedLogs = [];
+    const rejected = spawn(executablePath, [securitySwitch, "--user-data-dir=" + profilePath], {
+      cwd: projectRoot,
+      env: { ...process.env, ELECTRON_ENABLE_LOGGING: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true
+    });
+    rejected.stdout.on("data", (chunk) => rejectedLogs.push(chunk.toString()));
+    rejected.stderr.on("data", (chunk) => rejectedLogs.push(chunk.toString()));
+    try {
+      const rejectedExit = await waitForProcessExit(rejected, 30_000, `Packaged ${label} rejection`);
+      assert.notEqual(rejectedExit.code, 0, `Packaged app must fail closed when ${label} is requested.`);
+      assert.deepEqual(processesUsingProfile(profilePath), [], `Rejected ${label} startup must not leave a payload process.`);
+    } catch (error) {
+      if (rejected.pid && isChildRunning(rejected)) {
+        execFileSync("taskkill", ["/pid", String(rejected.pid), "/t", "/f"], { stdio: "ignore" });
+        await waitForProcessExit(rejected, 10_000, "Rejected packaged app cleanup");
+      }
+      throw new Error(`Packaged app did not reject ${label} startup.\n${rejectedLogs.join("")}`, { cause: error });
+    }
+  }
+  await assertPortAvailable(localEndpoint.host, localEndpoint.port);
+}
+
+function processesUsingProfile(profilePath) {
+  const escaped = profilePath.replaceAll("'", "''");
+  const output = execFileSync("powershell.exe", [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    `$needle='${escaped}'; @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like ('*' + $needle + '*') } | ForEach-Object { $_.ProcessId }) -join ','`
+  ], { encoding: "utf8", windowsHide: true }).trim();
+  return output ? output.split(",").map((value) => Number(value)) : [];
+}
+
+async function confirmUnsavedClose(rootProcess, action) {
+  const confirmationLogs = [];
+  const confirmer = spawn("powershell.exe", [
+    "-NoProfile",
+    "-ExecutionPolicy", "Bypass",
+    "-File", resolve("scripts/confirm-unsaved-close.ps1"),
+    "-RootProcessId", String(rootProcess.pid),
+    "-Action", action,
+    "-TimeoutMs", "20000"
+  ], {
+    cwd: projectRoot,
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true
+  });
+  confirmer.stdout.on("data", (chunk) => confirmationLogs.push(chunk.toString()));
+  confirmer.stderr.on("data", (chunk) => confirmationLogs.push(chunk.toString()));
+  const exit = await waitForProcessExit(confirmer, 25_000, "Unsaved-close " + action + " confirmer");
+  const log = confirmationLogs.join("");
+  assert.equal(exit.code, 0, "Owned unsaved-close " + action + " action was not confirmed:\n" + log);
+  return log;
+}
+
+function parseLastJsonLine(output) {
+  for (const line of output.trim().split(/\r?\n/).reverse()) {
+    try {
+      return JSON.parse(line);
+    } catch {}
+  }
+  throw new Error("Packaged UI verifier did not return JSON:\n" + output);
+}
+
 async function assertPortAvailable(host, port) {
   const server = createServer();
   await new Promise((resolveListen, rejectListen) => {
     server.once("error", rejectListen);
     server.listen({ host, port, exclusive: true }, resolveListen);
   });
-  await new Promise((resolveClose, rejectClose) => server.close((error) => error ? rejectClose(error) : resolveClose()));
+  await new Promise((resolveClose, rejectClose) => {
+    server.close((error) => error ? rejectClose(error) : resolveClose());
+  });
 }
 
 async function waitForProcessExit(childProcess, timeoutMs, label = "Process") {
@@ -249,7 +303,7 @@ async function waitForProcessExit(childProcess, timeoutMs, label = "Process") {
   return new Promise((resolveExit, rejectExit) => {
     const timer = setTimeout(() => {
       childProcess.off("exit", onExit);
-      rejectExit(new Error(`${label} did not exit within ${timeoutMs}ms`));
+      rejectExit(new Error(label + " did not exit within " + timeoutMs + "ms"));
     }, timeoutMs);
     const onExit = (code, signal) => {
       clearTimeout(timer);
@@ -265,9 +319,9 @@ function isChildRunning(childProcess) {
 
 function assertDialogProcessIds(log, action) {
   const closeMatch = log.match(/close-requested:(\d+)/);
-  const confirmMatch = log.match(new RegExp(`confirmed:${action}:(\\d+)`));
+  const confirmMatch = log.match(new RegExp("confirmed:" + action + ":(\\d+)"));
   assert.ok(closeMatch, "Dialog verifier must request a native close on the owned payload window");
-  assert.ok(confirmMatch, `Dialog verifier must confirm the ${action} action on the owned payload window`);
+  assert.ok(confirmMatch, "Dialog verifier must confirm " + action + " on the owned payload window");
   assert.equal(confirmMatch[1], closeMatch[1], "Dialog action must target the same payload process that received WM_CLOSE");
   return Number(closeMatch[1]);
 }

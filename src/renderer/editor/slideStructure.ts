@@ -20,7 +20,20 @@ export type SlideMutationAvailability = {
   reason?: string;
 };
 
-const IDREF_TOKEN_ATTRIBUTES = ["for", "aria-labelledby", "aria-describedby", "aria-controls", "aria-owns", "headers"];
+const IDREF_TOKEN_ATTRIBUTES = [
+  "for",
+  "form",
+  "headers",
+  "list",
+  "aria-activedescendant",
+  "aria-controls",
+  "aria-describedby",
+  "aria-details",
+  "aria-errormessage",
+  "aria-flowto",
+  "aria-labelledby",
+  "aria-owns"
+];
 
 export function detectSlideStructure(document: Document): SlideStructure | null {
   const revealContainer = document.querySelector(".reveal .slides");
@@ -32,16 +45,15 @@ export function detectSlideStructure(document: Document): SlideStructure | null 
     return null;
   }
 
-  for (const [selector, kind] of [
+  const candidates = [
     ["section.slide", "section-slide"],
     ["[data-slide]", "data-slide"],
     ["article.slide", "article-slide"]
-  ] as const) {
-    const structure = commonParentStructure(document, selector, kind);
-    if (structure) {
-      return structure;
-    }
-  }
+  ] as const;
+  const decisions = candidates.map(([selector, kind]) => commonParentStructure(document, selector, kind));
+  if (decisions.includes("unsafe")) return null;
+  const structure = decisions.find((decision): decision is SlideStructure => decision !== null && decision !== "unsafe");
+  if (structure) return structure;
 
   const bodySections = directChildrenMatching(document.body, "section");
   if (bodySections.length > 0) {
@@ -132,7 +144,7 @@ function commonParentStructure(
   document: Document,
   selector: string,
   kind: SlideStructure["kind"]
-): SlideStructure | null {
+): SlideStructure | "unsafe" | null {
   const all = Array.from(document.querySelectorAll(selector)).filter((node): node is HTMLElement => node instanceof HTMLElement);
   const topLevel = all.filter((node) => !all.some((candidate) => candidate !== node && candidate.contains(node)));
   if (topLevel.length === 0) {
@@ -140,10 +152,14 @@ function commonParentStructure(
   }
   const parent = topLevel[0].parentElement;
   if (!parent || topLevel.some((node) => node.parentElement !== parent)) {
-    return null;
+    return "unsafe";
+  }
+  const tagName = topLevel[0].tagName;
+  if (topLevel.some((node) => node.tagName !== tagName)) {
+    return "unsafe";
   }
   const nodes = Array.from(parent.children).filter((node): node is HTMLElement => node instanceof HTMLElement && node.matches(selector));
-  return nodes.length > 0 ? { nodes, container: parent, kind } : null;
+  return nodes.length > 0 ? { nodes, container: parent, kind } : "unsafe";
 }
 
 function directChildrenMatching(container: HTMLElement, selector: string): HTMLElement[] {
@@ -185,13 +201,15 @@ function createBlankSlide(document: Document, reference: HTMLElement): HTMLEleme
 
 function regenerateCloneIdentifiers(clone: HTMLElement, document: Document): void {
   const idMap = new Map<string, string>();
+  const reservedIds = new Set(Array.from(document.querySelectorAll("[id]"), (element) => element.id));
   const all = [clone, ...Array.from(clone.querySelectorAll("*"))];
   for (const element of all) {
     const existingId = element.getAttribute("id");
     if (existingId) {
-      const nextId = uniqueDocumentId(document, `${existingId}-copy`);
+      const nextId = uniqueDocumentId(reservedIds, `${existingId}-copy`);
       idMap.set(existingId, nextId);
       element.setAttribute("id", nextId);
+      reservedIds.add(nextId);
     }
     for (const attributeName of ["data-hss-id", "data-hss-overlay-id"]) {
       if (element.hasAttribute(attributeName)) {
@@ -214,19 +232,26 @@ function regenerateCloneIdentifiers(clone: HTMLElement, document: Document): voi
       }
     }
     for (const attribute of Array.from(element.attributes)) {
-      if (!attribute.value.includes("url(#")) continue;
-      element.setAttribute(
-        attribute.name,
-        attribute.value.replace(/url\(#([^)]+)\)/g, (_match, id: string) => `url(#${idMap.get(id) ?? id})`)
-      );
+      const rewritten = rewriteInternalCssUrls(attribute.value, idMap);
+      if (rewritten !== attribute.value) element.setAttribute(attribute.name, rewritten);
     }
+  }
+  for (const styleElement of Array.from(clone.querySelectorAll("style"))) {
+    styleElement.textContent = rewriteInternalCssUrls(styleElement.textContent ?? "", idMap);
   }
 }
 
-function uniqueDocumentId(document: Document, base: string): string {
+function rewriteInternalCssUrls(value: string, idMap: Map<string, string>): string {
+  return value.replace(
+    /url\(\s*(["']?)#([^\s)"']+)\1\s*\)/gi,
+    (_match, quote: string, id: string) => `url(${quote}#${idMap.get(id) ?? id}${quote})`
+  );
+}
+
+function uniqueDocumentId(reservedIds: Set<string>, base: string): string {
   let candidate = base;
   let sequence = 2;
-  while (document.getElementById(candidate)) {
+  while (reservedIds.has(candidate)) {
     candidate = `${base}-${sequence}`;
     sequence += 1;
   }

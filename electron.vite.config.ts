@@ -28,6 +28,9 @@ function localEndpointIdentity(): Plugin {
 
 export default defineConfig({
   main: {
+    define: {
+      __HSS_DEV_RENDERER_ORIGIN__: JSON.stringify(`${endpoint.protocol}://${endpoint.host}:${endpoint.port}`)
+    },
     build: {
       rollupOptions: {
         input: {

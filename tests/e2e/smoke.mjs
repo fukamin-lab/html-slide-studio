@@ -11,17 +11,20 @@ const mainPath = resolve("out/main/main.js");
 const fixturePath = resolve("tests/fixtures/workflow-slide.html");
 const revealFixturePath = resolve("tests/fixtures/reveal-nested.html");
 const unsupportedFixturePath = resolve("tests/fixtures/unsupported-body-sections.html");
+const mixedFixturePath = resolve("tests/fixtures/mixed-data-slide.html");
 
 const tempRoot = await mkdtemp(join(tmpdir(), "hss-legacy-e2e-"));
 const htmlPath = join(tempRoot, "workflow.html");
 const revealPath = join(tempRoot, "reveal-nested.html");
 const unsupportedPath = join(tempRoot, "unsupported-body-sections.html");
+const mixedPath = join(tempRoot, "mixed-data-slide.html");
 const artifactsPath = join(tempRoot, "artifacts");
 const reopenedPresenterSnapshotPath = join(tempRoot, "reopened-presenter-snapshot.json");
 await mkdir(artifactsPath);
 await copyFile(fixturePath, htmlPath);
 await copyFile(revealFixturePath, revealPath);
 await copyFile(unsupportedFixturePath, unsupportedPath);
+await copyFile(mixedFixturePath, mixedPath);
 
 let session = null;
 let presenterNotesRoundTrip = false;
@@ -62,6 +65,36 @@ try {
   assert.equal(startup.canvasFitNoScroll, true);
   assert.equal(startup.bridge, true);
 
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 760, height: 560, deviceScaleFactor: 1, mobile: false });
+  await waitForEval(cdp, "window.innerWidth === 760 && window.innerHeight === 560");
+  const narrowLayout = await evaluate(cdp, `(() => {
+    const buttons = Array.from(document.querySelectorAll('.editor-toolbar button'));
+    const toolbar = document.querySelector('.editor-toolbar');
+    const workspace = document.querySelector('.workspace-grid');
+    const viewport = document.querySelector('.canvas-viewport--fit');
+    return {
+      viewportWidth: window.innerWidth,
+      overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      toolbarOverflow: toolbar ? toolbar.scrollWidth > toolbar.clientWidth : true,
+      workspaceOverflow: workspace ? workspace.scrollWidth > workspace.clientWidth : true,
+      actionsReachable: buttons.length === 8 && buttons.every((button) => {
+        const rect = button.getBoundingClientRect();
+        return rect.left >= 0 && rect.right <= window.innerWidth && rect.top >= 0 && rect.bottom <= window.innerHeight;
+      }),
+      canvasFitNoScroll: viewport ? getComputedStyle(viewport).overflow === 'hidden' : false
+    };
+  })()`);
+  assert.deepEqual(narrowLayout, {
+    viewportWidth: 760,
+    overflowX: false,
+    toolbarOverflow: false,
+    workspaceOverflow: false,
+    actionsReachable: true,
+    canvasFitNoScroll: true
+  });
+  await cdp.send("Emulation.clearDeviceMetricsOverride");
+  await waitForEval(cdp, "window.innerWidth > 760");
+
   let sourceHeadingPoint = await sourceTextCaretPoint(cdp, "#fixture-title", 2);
   await clickAtPoint(cdp, sourceHeadingPoint.x, sourceHeadingPoint.y);
   await waitForEval(cdp, "document.querySelectorAll('.selection-outline').length === 1 && document.querySelectorAll('.selection-move-edge').length === 4");
@@ -98,6 +131,18 @@ try {
     return heading?.getAttribute('contenteditable') === 'true' && frame?.contentDocument?.activeElement === heading && Boolean(selection?.isCollapsed) && selection?.anchorOffset === 2;
   })()`);
   assert.deepEqual(await sourceElementBox(cdp, "#fixture-title"), sourceBoxBeforeEdit, "an interior click must enter text editing without moving the source element");
+  const sourceCompositionGuarded = await evaluate(cdp, `(() => {
+    const frame = document.querySelector('iframe.slide-frame');
+    const heading = frame?.contentDocument?.querySelector('#fixture-title');
+    if (!(heading instanceof frame.contentWindow.HTMLElement)) return false;
+    heading.dispatchEvent(new frame.contentWindow.CompositionEvent('compositionstart', { bubbles: true, data: 'を' }));
+    const escape = new frame.contentWindow.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true, isComposing: true });
+    heading.dispatchEvent(escape);
+    const guarded = !escape.defaultPrevented && heading.getAttribute('contenteditable') === 'true';
+    heading.dispatchEvent(new frame.contentWindow.CompositionEvent('compositionend', { bubbles: true, data: 'を' }));
+    return guarded;
+  })()`);
+  assert.equal(sourceCompositionGuarded, true, "source text editing must not handle Escape while IME composition is active");
   await cdp.send('Input.insertText', { text: 'を' });
   await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
@@ -150,6 +195,8 @@ try {
   await setInputValue(cdp, "#speaker-notes-editor", "E2E発表メモ");
   await clickButtonByText(cdp, ".editor-toolbar button", "テキスト");
   await waitForEval(cdp, "document.querySelectorAll('[data-hss-overlay-id]').length === 1 && Boolean(document.querySelector('#inspector-text'))");
+  const fontChoices = await evaluate(cdp, "Array.from(document.querySelectorAll('select[aria-label=\"フォント\"] option')).map((option) => option.textContent?.trim())");
+  assert.ok(fontChoices.includes("Meiryo UI"), "the text formatting menu must offer Meiryo UI");
   const headingPoint = await evaluate(cdp, `(() => {
     const canvas = document.querySelector('.canvas-frame');
     if (!(canvas instanceof HTMLElement)) return null;
@@ -173,6 +220,17 @@ try {
     const element = document.querySelector('.overlay-text__content');
     return element?.getAttribute('contenteditable') === 'true' && document.activeElement === element;
   })()`), true, "a single click on selected overlay text must immediately enter caret editing");
+  const overlayCompositionGuarded = await evaluate(cdp, `(() => {
+    const element = document.querySelector('.overlay-text__content');
+    if (!(element instanceof HTMLElement)) return false;
+    element.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '字' }));
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true, isComposing: true });
+    element.dispatchEvent(escape);
+    const guarded = !escape.defaultPrevented && element.getAttribute('contenteditable') === 'true';
+    element.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '字' }));
+    return guarded;
+  })()`);
+  assert.equal(overlayCompositionGuarded, true, "overlay text editing must not handle Escape while IME composition is active");
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape' });
   await waitForEval(cdp, "document.querySelector('.overlay-text__content')?.getAttribute('contenteditable') !== 'true'");
@@ -384,6 +442,48 @@ try {
   await waitForEval(session.cdp, "document.querySelectorAll('.slide-list__item').length === 3");
   await clickButtonByText(session.cdp, ".editor-toolbar button", "保存");
   await waitForEval(session.cdp, "document.querySelector('.app-status')?.textContent.includes('上書き保存しました')", 20_000);
+  const duplicateReferences = await evaluate(session.cdp, `(() => {
+    const root = document.querySelector('iframe.slide-frame')?.contentDocument;
+    if (!root) return { pass: false, reason: 'missing frame' };
+    const copiedHeading = root.querySelector('[id^="parent-heading-copy"]');
+    const slide = copiedHeading?.closest('section.slide');
+    if (!slide) return { pass: false, reason: 'missing current duplicate slide' };
+    const ids = new Set(Array.from(slide.querySelectorAll('[id]'), (element) => element.id));
+    const references = [];
+    for (const [selector, attribute] of [
+      ['label[for]', 'for'],
+      ['input[list]', 'list'],
+      ['input[form]', 'form'],
+      ['td[headers]', 'headers'],
+      ['[aria-activedescendant]', 'aria-activedescendant'],
+      ['[aria-controls]', 'aria-controls'],
+      ['[aria-describedby]', 'aria-describedby'],
+      ['[aria-details]', 'aria-details'],
+      ['[aria-errormessage]', 'aria-errormessage'],
+      ['[aria-flowto]', 'aria-flowto'],
+      ['[aria-labelledby]', 'aria-labelledby'],
+      ['[aria-owns]', 'aria-owns']
+    ]) {
+      const element = slide.querySelector(selector);
+      if (!element) return { pass: false, reason: 'missing ' + selector };
+      references.push(...(element.getAttribute(attribute) ?? '').split(/\\s+/).filter(Boolean));
+    }
+    for (const element of slide.querySelectorAll('[href], use')) {
+      for (const attribute of ['href', 'xlink:href']) {
+        const value = element.getAttribute(attribute);
+        if (value?.startsWith('#')) references.push(value.slice(1));
+      }
+    }
+    for (const element of slide.querySelectorAll('[style], style')) {
+      const text = element instanceof HTMLStyleElement ? element.textContent ?? '' : element.getAttribute('style') ?? '';
+      for (const match of text.matchAll(/url\\(\\s*["']?#([^)"']+)["']?\\s*\\)/g)) references.push(match[1]);
+    }
+    return {
+      pass: references.length >= 16 && references.every((id) => ids.has(id) && id.includes('-copy')),
+      references
+    };
+  })()`);
+  assert.equal(duplicateReferences.pass, true, duplicateReferences.reason ?? "duplicated ID references must stay internal");
   const revealHtml = await readFile(revealPath, "utf8");
   assert.equal((revealHtml.match(/class="slide"/g) ?? []).length, 3);
   assert.equal((revealHtml.match(/data-nested-fragment="true"/g) ?? []).length, 2);
@@ -403,6 +503,18 @@ try {
   assert.match(unsupported.reason ?? "", /区別できない/);
 
   await shutdown(session);
+  session = await launch("mixed", mixedPath);
+  await waitForEval(session.cdp, "document.querySelectorAll('.slide-list__item').length === 1", 30_000);
+  const mixed = await evaluate(session.cdp, `({
+    addDisabled: document.querySelector('.slide-navigator__heading button')?.disabled,
+    duplicateDisabled: document.querySelector('.slide-navigator__actions button')?.disabled,
+    reason: document.querySelector('.slide-navigator__notice')?.textContent
+  })`);
+  assert.equal(mixed.addDisabled, true);
+  assert.equal(mixed.duplicateDisabled, true);
+  assert.match(mixed.reason ?? "", /安全に判定できない/);
+
+  await shutdown(session);
   session = null;
   const presenterEvidence = execFileSync(process.execPath, [resolve("tests/e2e/presenter.mjs"), reopenedPresenterSnapshotPath], {
     cwd: repoRoot,
@@ -411,7 +523,7 @@ try {
   });
   assert.match(presenterEvidence, /"reopenedSaveChain": true/);
 
-  console.log(JSON.stringify({ pass: true, slides: 4, overwrite: true, reopen: true, presenterNotesRoundTrip, presenterDrawingSynced, reopenedNotesInPresenter: true, nestedReveal: true, unsupportedMutationDisabled: true, screenshotCaptured: true }, null, 2));
+  console.log(JSON.stringify({ pass: true, slides: 4, overwrite: true, reopen: true, presenterNotesRoundTrip, presenterDrawingSynced, reopenedNotesInPresenter: true, nestedReveal: true, duplicateReferencesRemapped: true, unsupportedMutationDisabled: true, mixedTagMutationDisabled: true, screenshotCaptured: true }, null, 2));
 } catch (error) {
   if (session?.cdp) {
     try {

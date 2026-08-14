@@ -161,12 +161,12 @@ export function PresenterApp(): JSX.Element {
                 </div>
                 <button type="button" onClick={handleClearDrawing} aria-label="描画を消去"><Trash2 size={17} /></button>
               </div>
-              <div className="presenter-controls">
-                <button type="button" onClick={() => sendCommand({ type: "previous-slide" })} disabled={currentIndex === 0} aria-label="前のスライド"><ChevronLeft size={24} /></button>
-                <button type="button" onClick={() => sendCommand({ type: "next-slide" })} disabled={currentIndex === snapshot.slides.length - 1} aria-label="次のスライド"><ChevronRight size={24} /></button>
-              </div>
             </div>
           </div>
+          <nav className="presenter-slide-navigation" aria-label="スライド移動">
+            <button type="button" onClick={() => sendCommand({ type: "previous-slide" })} disabled={currentIndex === 0} aria-label="前のスライド" title="前のスライド"><ChevronLeft size={32} /></button>
+            <button type="button" onClick={() => sendCommand({ type: "next-slide" })} disabled={currentIndex === snapshot.slides.length - 1} aria-label="次のスライド" title="次のスライド"><ChevronRight size={32} /></button>
+          </nav>
           <SlidePreviewFrame
             sourceHtml={snapshot.sourceHtml}
             sourceBaseHref={snapshot.sourceBaseUrl}

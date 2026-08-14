@@ -6,29 +6,54 @@ import { closePresenterWindow, registerPresenterIpc } from "./presenterWindow";
 import { configureGlobalSecurity, configureWindowSecurity } from "./security";
 import { getEditorWindow, registerEditorWindow } from "./editorWindowRegistry";
 import { registerUnsavedClosePrompt } from "./unsavedClose";
+import {
+  findForbiddenPackagedChromiumSwitch,
+  resolveDevelopmentRemoteDebuggingPort,
+  resolveDevelopmentRendererUrl
+} from "./runtimeEnvironment";
 
-const isDev = Boolean(process.env.ELECTRON_RENDERER_URL);
-const remoteDebuggingPort = process.env.HSS_REMOTE_DEBUGGING_PORT;
-const userDataDir = process.env.HSS_USER_DATA_DIR;
+declare const __HSS_DEV_RENDERER_ORIGIN__: string;
 
-if (userDataDir) {
-  app.setPath("userData", userDataDir);
-}
+let developmentRendererUrl: string | null = null;
+let isDev = false;
 
-if (remoteDebuggingPort) {
-  app.commandLine.appendSwitch("remote-debugging-port", remoteDebuggingPort);
-}
-
-const firstLaunchHtmlPath = findLaunchHtmlPath(process.argv);
-if (firstLaunchHtmlPath) {
-  setPendingLaunchHtmlPath(firstLaunchHtmlPath);
-}
-
-const singleInstanceLock = app.requestSingleInstanceLock();
-if (!singleInstanceLock) {
-  app.quit();
+const forbiddenPackagedSwitch = findForbiddenPackagedChromiumSwitch(process.argv, app.isPackaged);
+if (forbiddenPackagedSwitch) {
+  console.error("Packaged startup rejected a security-sensitive Chromium switch: " + forbiddenPackagedSwitch.split("=", 1)[0]);
+  app.exit(1);
 } else {
-  registerApplicationEvents();
+  startApplication();
+}
+
+function startApplication(): void {
+  developmentRendererUrl = resolveDevelopmentRendererUrl(
+    process.env.ELECTRON_RENDERER_URL,
+    app.isPackaged,
+    __HSS_DEV_RENDERER_ORIGIN__
+  );
+  isDev = developmentRendererUrl !== null;
+  const remoteDebuggingPort = resolveDevelopmentRemoteDebuggingPort(process.env.HSS_REMOTE_DEBUGGING_PORT, app.isPackaged);
+  const userDataDir = process.env.HSS_USER_DATA_DIR;
+
+  if (userDataDir && !app.isPackaged) {
+    app.setPath("userData", userDataDir);
+  }
+
+  if (remoteDebuggingPort) {
+    app.commandLine.appendSwitch("remote-debugging-port", remoteDebuggingPort);
+  }
+
+  const firstLaunchHtmlPath = findLaunchHtmlPath(process.argv);
+  if (firstLaunchHtmlPath) {
+    setPendingLaunchHtmlPath(firstLaunchHtmlPath);
+  }
+
+  const singleInstanceLock = app.requestSingleInstanceLock();
+  if (!singleInstanceLock) {
+    app.quit();
+  } else {
+    registerApplicationEvents();
+  }
 }
 
 function createMainWindow(): void {
@@ -75,9 +100,8 @@ function createMainWindow(): void {
     closePresenterWindow();
   });
 
-  const devServerUrl = process.env.ELECTRON_RENDERER_URL;
-  if (devServerUrl) {
-    void mainWindow.loadURL(devServerUrl);
+  if (developmentRendererUrl) {
+    void mainWindow.loadURL(developmentRendererUrl);
   } else {
     void mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
   }

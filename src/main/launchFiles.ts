@@ -1,7 +1,8 @@
 import { existsSync, statSync } from "node:fs";
 import { extname, resolve } from "node:path";
 
-let pendingLaunchHtmlPath: string | null = null;
+const MAX_PENDING_LAUNCHES = 64;
+const pendingLaunchHtmlPaths: string[] = [];
 
 export function findLaunchHtmlPath(argv: string[]): string | null {
   for (const arg of argv) {
@@ -28,11 +29,16 @@ export function findLaunchHtmlPath(argv: string[]): string | null {
 }
 
 export function setPendingLaunchHtmlPath(filePath: string | null): void {
-  pendingLaunchHtmlPath = filePath;
+  if (filePath === null) {
+    pendingLaunchHtmlPaths.length = 0;
+    return;
+  }
+  if (pendingLaunchHtmlPaths.length >= MAX_PENDING_LAUNCHES) {
+    throw new Error("Too many HTML launch requests are pending");
+  }
+  pendingLaunchHtmlPaths.push(filePath);
 }
 
 export function takePendingLaunchHtmlPath(): string | null {
-  const filePath = pendingLaunchHtmlPath;
-  pendingLaunchHtmlPath = null;
-  return filePath;
+  return pendingLaunchHtmlPaths.shift() ?? null;
 }

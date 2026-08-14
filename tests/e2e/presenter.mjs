@@ -46,6 +46,12 @@ try {
     activeThumbAccessible: document.querySelector('.presenter-slide-thumb--active')?.getAttribute('aria-current'),
     laserDefault: document.querySelector('.presenter-tools button[aria-label="レーザー"]')?.classList.contains('is-active'),
     laserPressed: document.querySelector('.presenter-tools button[aria-label="レーザー"]')?.getAttribute('aria-pressed'),
+    navigation: [...document.querySelectorAll('.presenter-slide-navigation button')].map((button) => ({
+      label: button.getAttribute('aria-label'),
+      width: getComputedStyle(button).width,
+      height: getComputedStyle(button).height,
+      font: getComputedStyle(document.documentElement).fontFamily
+    })),
     notesLabel: document.querySelector('.presenter-notes__editor')?.getAttribute('aria-label'),
     currentNoScroll: (() => {
       const frame = document.querySelector('.presenter-current iframe');
@@ -61,13 +67,16 @@ try {
   assert.equal(state.activeThumbAccessible, "page");
   assert.equal(state.laserDefault, true);
   assert.equal(state.laserPressed, "true");
+  assert.deepEqual(state.navigation.map((button) => button.label), ["前のスライド", "次のスライド"]);
+  assert.ok(state.navigation.every((button) => button.width === "56px" && button.height === "56px"));
+  assert.match(state.navigation[0]?.font ?? "", /Meiryo UI/);
   assert.equal(state.notesLabel, "発表者ノート");
   assert.equal(state.currentNoScroll, true);
   assert.equal(state.editorBridgeAbsent, true);
   assert.deepEqual(state.presenterCapabilities, ["onPresenterState", "presenterReady", "sendPresenterCommand"]);
 
   const clicked = await evaluate(cdp, `(() => {
-    const button = document.querySelector('.presenter-controls button[aria-label="次のスライド"]');
+    const button = document.querySelector('.presenter-slide-navigation button[aria-label="次のスライド"]');
     if (!(button instanceof HTMLElement)) return false;
     button.click();
     return true;

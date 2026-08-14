@@ -13,6 +13,18 @@ extraResources:
   - from: THIRD_PARTY_NOTICES.md
     to: THIRD_PARTY_NOTICES.md
 asar: true
+# Freeze the Electron process model in every shipped Windows payload. The app
+# opens its own renderer through file://, so file protocol privileges remain on,
+# while Node/debugging injection and fallback from app.asar stay disabled.
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  loadBrowserProcessSpecificV8Snapshot: false
+  grantFileProtocolExtraPrivileges: true
 win:
   icon: build/icon.ico
   electronLanguages:

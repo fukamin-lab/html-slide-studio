@@ -5,10 +5,11 @@ import { createLaunchOpenGate } from "../../src/renderer/launchOpenGate.ts";
 test("second-instance launch remains pending throughout an active save", async () => {
   const applied = [];
   let consumeCount = 0;
+  const queued = [{ filePath: "B.html" }];
   const gate = createLaunchOpenGate({
     consume: async () => {
       consumeCount += 1;
-      return { filePath: "B.html" };
+      return queued.shift() ?? null;
     },
     apply: (value) => applied.push(value.filePath),
     onConsumeStart: () => undefined,
@@ -22,7 +23,7 @@ test("second-instance launch remains pending throughout an active save", async (
   assert.deepEqual(applied, []);
 
   await gate.endBlockingOperation();
-  assert.equal(consumeCount, 1);
+  assert.equal(consumeCount, 2, "the queue is drained until main reports it empty");
   assert.deepEqual(applied, ["B.html"]);
 });
 
@@ -30,10 +31,11 @@ test("launch result already in flight is deferred when save starts", async () =>
   const applied = [];
   let releaseConsume;
   const consumeGate = new Promise((resolve) => { releaseConsume = resolve; });
+  const queued = [{ filePath: "B.html" }];
   const gate = createLaunchOpenGate({
     consume: async () => {
       await consumeGate;
-      return { filePath: "B.html" };
+      return queued.shift() ?? null;
     },
     apply: (value) => applied.push(value.filePath),
     onConsumeStart: () => undefined,
@@ -57,10 +59,11 @@ test("same-path launch open owns the document operation until its payload is app
   let documentOperation = null;
   let releaseOpen;
   const openGate = new Promise((resolve) => { releaseOpen = resolve; });
+  const queued = [{ filePath: "A.html", fingerprint: "old" }];
   const gate = createLaunchOpenGate({
     consume: async () => {
       await openGate;
-      return { filePath: "A.html", fingerprint: "old" };
+      return queued.shift() ?? null;
     },
     apply: (value) => applied.push(`${value.filePath}:${value.fingerprint}`),
     onConsumeStart: () => {
@@ -85,4 +88,45 @@ test("same-path launch open owns the document operation until its payload is app
   await launched;
   assert.equal(documentOperation, null);
   assert.deepEqual(applied, ["A.html:old"]);
+});
+
+test("one coalesced notification drains queued launch files in FIFO order", async () => {
+  const queued = [
+    { filePath: "A.html" },
+    { filePath: "B.html" },
+    { filePath: "C.html" }
+  ];
+  const applied = [];
+  const gate = createLaunchOpenGate({
+    consume: async () => queued.shift() ?? null,
+    apply: (value) => applied.push(value.filePath),
+    onConsumeStart: () => undefined,
+    onConsumeEnd: () => undefined,
+    onError: (error) => assert.fail(error)
+  });
+
+  await gate.notify();
+  assert.deepEqual(applied, ["A.html", "B.html", "C.html"]);
+});
+
+test("bounded launch draining yields before consuming the next batch", async () => {
+  const queued = Array.from({ length: 65 }, (_, index) => ({ filePath: `${index + 1}.html` }));
+  const applied = [];
+  let consumeCount = 0;
+  const gate = createLaunchOpenGate({
+    consume: async () => {
+      consumeCount += 1;
+      return queued.shift() ?? null;
+    },
+    apply: (value) => applied.push(value.filePath),
+    onConsumeStart: () => undefined,
+    onConsumeEnd: () => undefined,
+    onError: (error) => assert.fail(error)
+  });
+
+  await gate.notify();
+  while (applied.length < 65) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(consumeCount, 66, "the 65th value must remain queued until the next bounded drain");
+  assert.equal(applied.length, 65);
+  assert.equal(applied[64], "65.html");
 });

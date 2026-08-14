@@ -1,4 +1,5 @@
 import { BrowserWindow, shell, session } from "electron";
+import { isAllowedExternalUrl, isSameRendererLocation } from "./securityPolicy";
 
 const PACKAGED_CSP = [
   "default-src 'self'",
@@ -13,8 +14,6 @@ const PACKAGED_CSP = [
   "base-uri 'self' file:",
   "form-action 'none'"
 ].join("; ");
-
-const allowedExternalProtocols = new Set(["https:", "mailto:"]);
 
 export function configureGlobalSecurity(isDev: boolean): void {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
@@ -48,25 +47,4 @@ export function configureWindowSecurity(window: BrowserWindow): void {
   });
 
   window.webContents.on("will-attach-webview", (event) => event.preventDefault());
-}
-
-function isAllowedExternalUrl(rawUrl: string): boolean {
-  try {
-    return allowedExternalProtocols.has(new URL(rawUrl).protocol);
-  } catch {
-    return false;
-  }
-}
-
-function isSameRendererLocation(currentUrl: string, targetUrl: string): boolean {
-  try {
-    const current = new URL(currentUrl);
-    const target = new URL(targetUrl);
-    return current.protocol === target.protocol &&
-      current.host === target.host &&
-      current.pathname === target.pathname &&
-      current.search === target.search;
-  } catch {
-    return false;
-  }
 }
