@@ -13,8 +13,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  windows-arm64:
-    runs-on: windows-11-arm
+  windows:
+    name: Windows ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: windows-11-arm
+          - arch: x64
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
       - name: Check out source
@@ -50,8 +59,8 @@ jobs:
       - name: Run unit and Electron end-to-end verification
         run: npm run verify
 
-      - name: Build and verify Windows ARM64 package
+      - name: Build and verify Windows package
         run: |
-          npm run package:win
-          npm run verify:package
-          npm run release:checksums
+          npm run package:win:${{ matrix.arch }}
+          npm run verify:package:${{ matrix.arch }}
+          npm run release:checksums:${{ matrix.arch }}

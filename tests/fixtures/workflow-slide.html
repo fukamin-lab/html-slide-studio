@@ -15,9 +15,18 @@
     <h1 id="fixture-title">AI講義のはじめに</h1>
     <p aria-labelledby="fixture-title">AIで作ったHTMLスライドを、人が最後に整えるための確認用資料です。</p>
   </section>
-  <section class="slide" data-label="まとめ" data-speaker-notes="最後のまとめ">
+  <section class="slide" data-label="まとめ" data-speaker-notes="最後のまとめ" style="display: flex; flex-direction: column">
     <h1 id="fixture-summary">まとめ</h1>
     <p aria-labelledby="fixture-summary">内容を確認し、上書き保存して、そのまま発表します。</p>
+    <p id="fixture-small-note" style="font-size: 10px">全スライド確認用の小さい注釈</p>
+    <div id="fixture-flex-clipped" style="flex: 0 0 6px; white-space: nowrap; overflow: hidden">flex配置を保って測定する確認文</div>
+    <div id="fixture-visible-glyph-overflow" style="font-size: 42px; line-height: 42px; overflow: visible">可視グリフの正常な行高</div>
+    <p id="fixture-healthy-wrap" style="width: 180px; overflow: visible">正常に折り返す確認文はクリッピングではありません</p>
+    <a id="fixture-external-link" href="https://example.com/reference">外部参照の確認</a>
+    <picture id="fixture-external-picture">
+      <source media="(max-width: 1px)" srcset="https://example.com/review-source.png 1x">
+      <img alt="外部srcsetの参照元" width="2" height="2">
+    </picture>
   </section>
 </body>
 </html>

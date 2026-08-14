@@ -1,27 +1,48 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { createServer } from "node:net";
-import { mkdtemp, open, readFile, rm } from "node:fs/promises";
+import { mkdtemp, open, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { resolveLocalEndpoint } from "./lib/local-endpoint.mjs";
+import {
+  getWindowsArchitecture,
+  getWindowsArtifactNames,
+  parseWindowsArchitectures
+} from "./lib/windows-package.mjs";
 
 const projectRoot = process.cwd();
 const packageJson = JSON.parse(await readFile(resolve(projectRoot, "package.json"), "utf8"));
-const portablePath = resolve("release/HTML Slide Studio.exe");
-const payloadPath = resolve("release/win-arm64-unpacked/HTML Slide Studio.exe");
-const zipPath = resolve("release/HTML Slide Studio-" + packageJson.version + "-arm64-win.zip");
+const [architectureName] = parseWindowsArchitectures(process.argv.slice(2), { allowAll: false });
+const architecture = getWindowsArchitecture(architectureName);
+const artifactNames = getWindowsArtifactNames(packageJson.version, architectureName);
+const installerPath = resolve("release", artifactNames.installer);
+const portablePath = resolve("release", artifactNames.portable);
+const payloadRoot = resolve("release", artifactNames.unpackedDirectory);
+const payloadPath = resolve(payloadRoot, "HTML Slide Studio.exe");
+const zipPath = resolve("release", artifactNames.zip);
 const endpoint = resolveLocalEndpoint(projectRoot);
 
-assert.equal(await readPeMachine(payloadPath), 0xaa64, "Packaged Electron payload must be native Windows ARM64");
+assert.equal(await readMzSignature(installerPath), "MZ", "Windows installer must be a PE executable");
+assert.equal((await readFile(installerPath)).length > 10 * 1024 * 1024, true, "Windows installer is unexpectedly small");
+assert.equal(
+  await readPeMachine(payloadPath),
+  architecture.peMachine,
+  `Packaged Electron payload must be native Windows ${architectureName}`
+);
 assertElectronFuses(payloadPath);
+const installerVerification = await verifyInstallerPayload(installerPath, dirname(payloadPath));
+const zipVerification = await verifyZipPayload(zipPath, payloadRoot);
+const installerPayloadMatchesUnpacked = true;
 assert.deepEqual(
-  await readFile(resolve("release/win-arm64-unpacked/resources/LICENSE")),
+  await readFile(resolve(payloadRoot, "resources/LICENSE")),
   await readFile(resolve("LICENSE")),
   "Packaged app must include the project MIT license"
 );
 assert.deepEqual(
-  await readFile(resolve("release/win-arm64-unpacked/resources/THIRD_PARTY_NOTICES.md")),
+  await readFile(resolve(payloadRoot, "resources/THIRD_PARTY_NOTICES.md")),
   await readFile(resolve("THIRD_PARTY_NOTICES.md")),
   "Packaged app must include third-party notices"
 );
@@ -35,8 +56,8 @@ for (const entry of [
 ]) {
   assert.equal(zipEntries.includes(entry), true, "ZIP must include " + entry);
 }
-const electronLicense = await readFile(resolve("release/win-arm64-unpacked/LICENSE.electron.txt"));
-const chromiumLicenses = await readFile(resolve("release/win-arm64-unpacked/LICENSES.chromium.html"));
+const electronLicense = await readFile(resolve(payloadRoot, "LICENSE.electron.txt"));
+const chromiumLicenses = await readFile(resolve(payloadRoot, "LICENSES.chromium.html"));
 assert.equal(electronLicense.length > 100, true, "Electron license must be nonempty");
 assert.equal(chromiumLicenses.length > 100, true, "Chromium licenses must be nonempty");
 assert.deepEqual(readZipEntry(zipPath, "LICENSE.electron.txt"), electronLicense, "ZIP Electron license must match unpacked payload");
@@ -52,7 +73,7 @@ assert.deepEqual(
   "ZIP third-party notices must match the source notices"
 );
 
-const asarPath = resolve("release/win-arm64-unpacked/resources/app.asar");
+const asarPath = resolve(payloadRoot, "resources/app.asar");
 const asarList = execFileSync(
   process.execPath,
   [resolve("node_modules/@electron/asar/bin/asar.js"), "list", asarPath],
@@ -145,8 +166,15 @@ try {
 
   verificationResult = {
     pass: true,
+    architecture: architectureName,
+    installer: installerPath,
+    installerArchive: installerVerification.archive,
+    installerFileCount: installerVerification.fileCount,
+    installerPayloadMatchesUnpacked,
+    zipFileCount: zipVerification.fileCount,
+    zipPayloadMatchesUnpacked: true,
     executable: portablePath,
-    payloadMachine: "0xAA64",
+    payloadMachine: architecture.peMachineHex,
     packagedDebuggingSwitchRejected: true,
     packagedEnvironmentInjectionIgnored: true,
     packagedDemoOpenedFromWelcome: true,
@@ -188,6 +216,136 @@ try {
 }
 
 console.log(JSON.stringify(verificationResult, null, 2));
+
+async function readMzSignature(filePath) {
+  const handle = await open(filePath, "r");
+  try {
+    const signature = Buffer.alloc(2);
+    const result = await handle.read(signature, 0, signature.length, 0);
+    assert.equal(result.bytesRead, signature.length, "PE DOS signature is truncated");
+    return signature.toString("ascii");
+  } finally {
+    await handle.close();
+  }
+}
+
+async function verifyInstallerPayload(installerFile, unpackedRoot) {
+  const extractionRoot = await mkdtemp(join(tmpdir(), "hss-installer-verify-"));
+  assert.match(basename(extractionRoot), /^hss-installer-verify-/, "Owned installer verification prefix is required");
+  try {
+    const { getPath7za } = await import("app-builder-lib/out/toolsets/7zip.js");
+    const sevenZipPath = await getPath7za();
+    const listing = execFileSync(sevenZipPath, ["l", "-slt", installerFile], {
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024
+    });
+    assert.match(
+      listing,
+      /^Type = zip$/m,
+      "Installer must embed a ZIP payload because the legacy Nsis7z decoder omits native ARM64 PE blocks"
+    );
+    execFileSync(sevenZipPath, ["t", installerFile], { stdio: "pipe", maxBuffer: 16 * 1024 * 1024 });
+    execFileSync(sevenZipPath, [
+      "x",
+      installerFile,
+      `-o${extractionRoot}`,
+      "-y"
+    ], { stdio: "pipe", maxBuffer: 16 * 1024 * 1024 });
+
+    const installerFiles = await comparePayloadTrees(extractionRoot, unpackedRoot, "Installer");
+
+    const installerExecutable = join(extractionRoot, "HTML Slide Studio.exe");
+    assert.equal(
+      await readPeMachine(installerExecutable),
+      architecture.peMachine,
+      `Installer payload must be native Windows ${architectureName}`
+    );
+    assertElectronFuses(installerExecutable);
+    return { archive: "zip", fileCount: installerFiles.length };
+  } finally {
+    await rm(extractionRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+}
+
+async function verifyZipPayload(zipFile, unpackedRoot) {
+  const extractionRoot = await mkdtemp(join(tmpdir(), "hss-zip-verify-"));
+  assert.match(basename(extractionRoot), /^hss-zip-verify-/, "Owned ZIP verification prefix is required");
+  try {
+    const { getPath7za } = await import("app-builder-lib/out/toolsets/7zip.js");
+    const sevenZipPath = await getPath7za();
+    const listing = execFileSync(sevenZipPath, ["l", "-slt", zipFile], {
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024
+    });
+    assert.match(listing, /^Type = zip$/m, "Standalone distribution archive must be a ZIP file");
+    execFileSync(sevenZipPath, ["t", zipFile], { stdio: "pipe", maxBuffer: 16 * 1024 * 1024 });
+    execFileSync(sevenZipPath, ["x", zipFile, `-o${extractionRoot}`, "-y"], {
+      stdio: "pipe",
+      maxBuffer: 16 * 1024 * 1024
+    });
+
+    // electron-builder adds elevate.exe only for the NSIS installer. The ZIP
+    // intentionally omits that helper; every other path and byte must match.
+    const zipFiles = await comparePayloadTrees(extractionRoot, unpackedRoot, "ZIP", {
+      excludeUnpacked: new Set(["resources/elevate.exe"])
+    });
+    return { archive: "zip", fileCount: zipFiles.length };
+  } finally {
+    await rm(extractionRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+}
+
+async function comparePayloadTrees(actualRoot, unpackedRoot, label, { excludeUnpacked = new Set() } = {}) {
+  const actualFiles = await collectRegularFiles(actualRoot);
+  const allUnpackedFiles = await collectRegularFiles(unpackedRoot);
+  for (const relativePath of excludeUnpacked) {
+    assert.equal(
+      allUnpackedFiles.includes(relativePath),
+      true,
+      `${label} payload exclusion must exist in the verified unpacked payload: ${relativePath}`
+    );
+  }
+  const unpackedFiles = allUnpackedFiles
+    .filter((relativePath) => !excludeUnpacked.has(relativePath));
+  assert.deepEqual(
+    actualFiles,
+    unpackedFiles,
+    `${label} payload file set must exactly match the verified unpacked payload`
+  );
+  for (const relativePath of unpackedFiles) {
+    assert.equal(
+      await sha256File(join(actualRoot, ...relativePath.split("/"))),
+      await sha256File(join(unpackedRoot, ...relativePath.split("/"))),
+      `${label} payload hash mismatch: ${relativePath}`
+    );
+  }
+  return actualFiles;
+}
+
+async function collectRegularFiles(root, prefix = "") {
+  const entries = await readdir(join(root, ...prefix.split("/").filter(Boolean)), { withFileTypes: true });
+  const files = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name, "en"))) {
+    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      files.push(...await collectRegularFiles(root, relativePath));
+      continue;
+    }
+    assert.equal(entry.isFile(), true, `Packaged payload contains a non-regular entry: ${relativePath}`);
+    files.push(relativePath);
+  }
+  return files;
+}
+
+function sha256File(filePath) {
+  return new Promise((resolveDigest, rejectDigest) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("error", rejectDigest);
+    stream.on("end", () => resolveDigest(hash.digest("hex")));
+  });
+}
 
 function readZipEntry(archivePath, entryName) {
   return execFileSync("tar", ["-xOf", archivePath, entryName], { maxBuffer: 64 * 1024 * 1024 });

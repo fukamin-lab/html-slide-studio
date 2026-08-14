@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- 表示中のslideを切り替えずに全slideを一括検査し、指摘から該当slideと要素へ移動できる発表前check
+- Windows ARM64向け通常インストーラー。インストール後は展開済みpayloadを直接起動し、portable EXEの起動ごとの自己展開を回避
+- Windows x64向けinstaller、portable EXE、ZIPとnative x64 CI job
+- architecture定義、成果物名、PE検証、checksum生成を共通moduleへ集約し、ARM64／x64の配布工程を同じ契約で保守
+
 ## [0.1.0] - 2026-08-11
 
 ### Added

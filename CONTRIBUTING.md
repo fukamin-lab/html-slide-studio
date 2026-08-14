@@ -22,11 +22,14 @@ npm run guide:check
 npm run verify
 ```
 
-配布物に関わる変更では、Windows ARM64環境で次も実行してください。
+配布物に関わる変更では、対象architectureで次も実行してください。CIはARM64／x64の両方を別runnerで検証します。
 
 ```powershell
-npm run package:win
-npm run verify:package
+npm run package:win:arm64
+npm run verify:package:arm64
+
+npm run package:win:x64
+npm run verify:package:x64
 ```
 
 ## Pull Request

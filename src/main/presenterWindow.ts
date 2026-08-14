@@ -24,8 +24,10 @@ export function registerPresenterIpc(): void {
     activeEditorWindow = editorWindow;
 
     if (!editorWindowState) {
+      const visibleBounds = editorWindow.getBounds();
       editorWindowState = {
-        bounds: editorWindow.getBounds(),
+        bounds: editorWindow.getNormalBounds(),
+        displayScaleFactor: screen.getDisplayMatching(visibleBounds).scaleFactor,
         wasFullScreen: editorWindow.isFullScreen(),
         wasMaximized: editorWindow.isMaximized()
       };
@@ -162,7 +164,8 @@ function restoreEditorWindow(): void {
   const window = activeEditorWindow;
   if (!window || window.isDestroyed() || !editorWindowState) return;
   try {
-    restoreWindowPlacement(window, editorWindowState);
+    const currentDisplayScaleFactor = screen.getDisplayMatching(window.getBounds()).scaleFactor;
+    restoreWindowPlacement(window, editorWindowState, currentDisplayScaleFactor);
   } catch (error) {
     console.error("[presenter] editor window restoration encountered an error", error);
   }

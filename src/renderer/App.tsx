@@ -80,8 +80,10 @@ export function App(): JSX.Element {
   const [statusMessage, setStatusMessage] = useState("HTMLファイルを開いてください");
   const [runtimeWarnings, setRuntimeWarnings] = useState<string[]>([]);
   const [isCheckOpen, setIsCheckOpen] = useState(false);
+  const [isReviewing, setIsReviewing] = useState(false);
   const [reviewRequestId, setReviewRequestId] = useState(0);
-  const [reviewSnapshot, setReviewSnapshot] = useState<ReviewSnapshot | null>(null);
+  const [reviewHtml, setReviewHtml] = useState<string | null>(null);
+  const [reviewSnapshots, setReviewSnapshots] = useState<ReviewSnapshot[] | null>(null);
   const [zoomMode, setZoomMode] = useState<CanvasZoomMode>("fit");
   const [fitScale, setFitScale] = useState(1);
   const [manualScale, setManualScale] = useState(1);
@@ -105,6 +107,8 @@ export function App(): JSX.Element {
   const sourceHtmlRef = useRef("");
   const patchesRef = useRef<Patch[]>([]);
   const overlaysRef = useRef<Overlay[]>([]);
+  const reviewSignatureRef = useRef<string | null>(null);
+  const latestReviewRequestIdRef = useRef(0);
   const selectionKindRef = useRef<"dom" | "overlay" | null>(null);
   const launchOpenGateRef = useRef<LaunchOpenGate<OpenDocumentPayload> | null>(null);
   const presentationVisualSnapshotRef = useRef<PresenterSnapshot | null>(null);
@@ -128,7 +132,7 @@ export function App(): JSX.Element {
   const selectionCount = selectedElements.length + selectedOverlayIds.length;
 
   const manifest = useMemo<PatchManifest>(() => createManifest(documentState, slides, patches, overlays), [documentState, overlays, patches, slides]);
-  const reviewResult = useMemo(() => buildReviewResult(reviewSnapshot, manifest), [manifest, reviewSnapshot]);
+  const reviewResult = useMemo(() => buildReviewResult(reviewSnapshots, manifest), [manifest, reviewSnapshots]);
   const blockingIssueCount = reviewResult.issues.filter((issue) => issue.severity !== "info").length;
   const documentName = documentState ? fileNameFromPath(documentState.filePath) : "HTML Slide Studio";
   const currentSlide = slides.find((slide) => slide.id === currentSlideId) ?? slides[0] ?? null;
@@ -150,6 +154,15 @@ export function App(): JSX.Element {
     }),
     [currentSlideId, documentName, documentState?.sourceBaseUrl, manifest, slides, sourceHtml]
   );
+
+  useEffect(() => {
+    if (reviewSnapshots && reviewSignatureRef.current !== currentSignature) {
+      reviewSignatureRef.current = null;
+      setReviewSnapshots(null);
+      setReviewHtml(null);
+      setIsCheckOpen(false);
+    }
+  }, [currentSignature, reviewSnapshots]);
 
   const clearSelection = useCallback(() => {
     selectionKindRef.current = null;
@@ -184,7 +197,10 @@ export function App(): JSX.Element {
     setSlides([]);
     setCurrentSlideId(null);
     setRuntimeWarnings([]);
-    setReviewSnapshot(null);
+    setReviewHtml(null);
+    setReviewSnapshots(null);
+    setIsReviewing(false);
+    reviewSignatureRef.current = null;
     setIsCheckOpen(false);
     clearSelection();
     setStatusMessage(`${fileNameFromPath(payload.filePath)} を開きました`);
@@ -628,21 +644,47 @@ export function App(): JSX.Element {
   }, [overlays, selectedOverlayIds]);
 
   const handleCheck = useCallback((): void => {
+    if (isReviewing) return;
+    const exported = buildEditedHtmlExport(sourceHtml, manifest);
+    const requestId = latestReviewRequestIdRef.current + 1;
+    latestReviewRequestIdRef.current = requestId;
+    reviewSignatureRef.current = currentSignature;
+    setReviewHtml(exported.html);
+    setReviewSnapshots(null);
+    setIsReviewing(true);
     setIsCheckOpen(true);
-    setReviewRequestId((current) => current + 1);
-    setStatusMessage("現在のスライドを確認しました");
+    setReviewRequestId(requestId);
+    setStatusMessage("全スライドを確認しています…");
+  }, [currentSignature, isReviewing, manifest, sourceHtml]);
+
+  const handleReviewSnapshots = useCallback((requestId: number, snapshots: ReviewSnapshot[]): void => {
+    if (requestId !== latestReviewRequestIdRef.current) return;
+    setReviewHtml(null);
+    if (reviewSignatureRef.current !== currentSignatureRef.current) {
+      reviewSignatureRef.current = null;
+      setReviewSnapshots(null);
+      setIsReviewing(false);
+      setStatusMessage("確認中に内容が変わったため、もう一度確認してください");
+      return;
+    }
+    setReviewSnapshots(snapshots);
+    setIsReviewing(false);
+    const slideCount = snapshots.filter((snapshot) => Boolean(snapshot.slideId)).length;
+    setStatusMessage(`全${slideCount}枚のスライドを確認しました`);
   }, []);
 
   const handleSelectIssue = useCallback((issue: ReviewIssue): void => {
-    const target = reviewSnapshot?.targets.find((candidate) => candidate.id === issue.targetId);
+    const target = reviewSnapshots
+      ?.flatMap((snapshot) => snapshot.targets)
+      .find((candidate) => candidate.id === issue.targetId && (!issue.slideId || candidate.slideId === issue.slideId));
     if (!target) return;
-    if (target.slideId) setCurrentSlideId(target.slideId);
+    if (issue.slideId ?? target.slideId) setCurrentSlideId(issue.slideId ?? target.slideId);
     if (target.source === "overlay") {
       handleSelectOverlay(target.id);
     } else {
       handleSelectDomElement(reviewTargetToSelectedElement(target));
     }
-  }, [handleSelectDomElement, handleSelectOverlay, reviewSnapshot?.targets]);
+  }, [handleSelectDomElement, handleSelectOverlay, reviewSnapshots]);
 
   const navigateSlide = useCallback((direction: -1 | 1): boolean => {
     const currentIndex = Math.max(0, slides.findIndex((slide) => slide.id === currentSlideId));
@@ -796,6 +838,7 @@ export function App(): JSX.Element {
           isDirty={isDirty}
           isSaving={isSaving}
           isOpening={isOpening}
+          isReviewing={isReviewing}
           canUndo={editorState.past.length > 0 || hasDirectTextDraft}
           canRedo={editorState.future.length > 0}
           checkIssueCount={blockingIssueCount}
@@ -826,6 +869,7 @@ export function App(): JSX.Element {
 
           <CanvasStage
             sourceHtml={sourceHtml}
+            reviewHtml={reviewHtml}
             sourceBaseHref={documentState.sourceBaseUrl}
             patches={patches}
             overlays={overlays}
@@ -867,11 +911,11 @@ export function App(): JSX.Element {
             onNudge={handleNudge}
             onRuntimeWarnings={(next) => setRuntimeWarnings(next)}
             reviewRequestId={reviewRequestId}
-            onReviewSnapshot={setReviewSnapshot}
+            onReviewSnapshots={handleReviewSnapshots}
           />
 
           {isCheckOpen ? (
-            <CheckPanel result={reviewResult} onSelectIssue={handleSelectIssue} onClose={() => setIsCheckOpen(false)} />
+            <CheckPanel result={reviewResult} isReviewing={isReviewing} onSelectIssue={handleSelectIssue} onClose={() => setIsCheckOpen(false)} />
           ) : (
             <SimpleInspector
               selectedElement={activeSelectedElement}
@@ -1003,7 +1047,7 @@ function reviewTargetToSelectedElement(target: ReviewTarget): SelectedElement {
   return {
     hssId: target.id,
     tagName: target.tagName ?? target.type,
-    selector: `[data-hss-id="${target.id}"]`,
+    selector: target.selector ?? `[data-hss-id="${target.id}"]`,
     textContent: target.text ?? target.label,
     childElementCount: 0,
     canEditTextDirectly: target.type === "text",

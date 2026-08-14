@@ -8,7 +8,7 @@
 
 - [ ] `npm run guide:check`
 - [ ] `npm run verify`
-- [ ] 配布物に関わる場合は `npm run package:win` と `npm run verify:package`
+- [ ] 配布物に関わる場合は対象architectureの `package:win:<arch>` と `verify:package:<arch>`（CIはARM64／x64の両方）
 - [ ] UI変更の場合は画面証拠を添付した
 - [ ] ユーザー向け挙動を変えた場合はREADME／ガイド／Product Contractを更新した
 

@@ -64,6 +64,8 @@ The packaged app includes one immutable demo template. `Open demo` creates the e
 
 The UI contains no project-format vocabulary, disabled collaboration controls, command palette, theme gallery, review workflow, or Office-style tab ribbon.
 
+`Check` inspects every detected slide in one run without visibly paging the editor through the deck. Each targeted issue includes the slide number and label; choosing it navigates to that slide and selects the affected element. Text clipping means overflow that is actually clipped or requires scrolling; visible font ink outside a line box and healthy wrapping are not clipping. The check uses the same sanitized, currently edited HTML that would be saved or presented.
+
 ## Acceptance evidence
 
 1. Same-path save and reopen.
@@ -84,6 +86,7 @@ The UI contains no project-format vocabulary, disabled collaboration controls, c
 16. Recovery reports retained external-race backups and restored invalid targets to the user.
 17. A second-instance file launch during save is deferred, then opens after save without mixing either document's path, source, or fingerprint.
 18. The packaged demo opens from the start screen as an editable copy without modifying the bundled template or overwriting an existing copy.
+19. One check run inspects every slide without changing the visible slide, and an issue on another slide navigates to and selects its target.
 
 ## Slide mutation contract
 
