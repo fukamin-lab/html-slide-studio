@@ -233,7 +233,11 @@ async function verifySecuritySensitiveSwitchRejected(executablePath, localEndpoi
     try {
       const rejectedExit = await waitForProcessExit(rejected, 30_000, `Packaged ${label} rejection`);
       assert.notEqual(rejectedExit.code, 0, `Packaged app must fail closed when ${label} is requested.`);
-      assert.deepEqual(processesUsingProfile(profilePath), [], `Rejected ${label} startup must not leave a payload process.`);
+      assert.deepEqual(
+        await waitForProfileProcessesToExit(profilePath, 10_000),
+        [],
+        `Rejected ${label} startup must not leave a payload process.`
+      );
     } catch (error) {
       if (rejected.pid && isChildRunning(rejected)) {
         execFileSync("taskkill", ["/pid", String(rejected.pid), "/t", "/f"], { stdio: "ignore" });
@@ -251,9 +255,19 @@ function processesUsingProfile(profilePath) {
     "-NoProfile",
     "-NonInteractive",
     "-Command",
-    `$needle='${escaped}'; @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like ('*' + $needle + '*') } | ForEach-Object { $_.ProcessId }) -join ','`
+    `$needle='${escaped}'; @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like ('*' + $needle + '*') } | ForEach-Object { $_.ProcessId }) -join ','`
   ], { encoding: "utf8", windowsHide: true }).trim();
   return output ? output.split(",").map((value) => Number(value)) : [];
+}
+
+async function waitForProfileProcessesToExit(profilePath, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let processIds = processesUsingProfile(profilePath);
+  while (processIds.length > 0 && Date.now() < deadline) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+    processIds = processesUsingProfile(profilePath);
+  }
+  return processIds;
 }
 
 async function confirmUnsavedClose(rootProcess, action) {
