@@ -47,7 +47,7 @@ AIで作った静的HTMLスライドを、Windows上で最後に直し、その�
 
 保存中は外部アプリによる同時変更を検出し、別の変更を黙って上書きしません。中断した保存を復旧した場合や、外部変更を守るためバックアップを残した場合は画面に通知します。
 
-追加画像はHTMLへ埋め込まず、HTMLと同じ場所の `<ファイル名>.assets/` にコピーします。HTML本体の肥大化を避け、資料一式をフォルダ単位で扱えます。
+追加画像はHTMLへ埋め込まず、HTMLと同じ場所の `<ファイル名>.assets/` にコピーします。HTML本体の肥大化を避け、資料一式をフォルダ単位で扱えます。未参照画像の自動整理は、アプリの所有索引と実ファイルのhashが一致する画像だけを対象にし、外部で変更された画像や利用者が置いたファイルは残します。
 
 ## 対応するHTML
 
@@ -110,9 +110,12 @@ npm run dev
 ### 検証
 
 ```powershell
+npm run public:source:check
 npm run guide:check
 npm run verify
 ```
+
+公開cloneでは`public:source:check`がorigin、clean状態、ignored/untracked file不在、公開境界をまとめて検査します。内部正本ではallowlist snapshotを新しい一時directoryへ作り、内部識別子不在を独立に検査して、後続gateを実行する候補pathを表示します。
 
 `npm run verify` は単体テスト、型検査、実Electronを操作するE2Eを実行します。デモopen、スライド操作、ノート、文字追加、上書き保存、再起動後の復元、発表者画面、対応外構造での安全な機能制限を確認します。
 
@@ -123,7 +126,7 @@ npm run package:win
 npm run verify:package
 ```
 
-成果物は `release/` に出力されます。パッケージ検証ではportable EXEを実際に起動し、製品名、ARM64 PE、同梱デモ、preload bridge、正常終了を確認します。公開やコード署名は行いません。
+成果物は `release/` に出力されます。パッケージ検証ではportable EXEをremote debuggingなしで実際に起動し、製品名、ARM64 PE、同梱デモ、未保存確認、正常終了、およびsecurityを弱める起動optionの拒否を確認します。公開やコード署名は行いません。
 
 リリース担当者向けの再現手順は[docs/RELEASE.md](docs/RELEASE.md)にあります。
 

@@ -15,7 +15,21 @@
     <div class="slides">
       <section class="slide" data-label="親スライド">
         <h1 id="parent-heading">親スライド</h1>
-        <section class="fragment" id="nested-fragment" data-nested-fragment="true" aria-labelledby="parent-heading">
+        <label id="parent-label" for="parent-control">入力</label>
+        <form id="parent-form"></form>
+        <input id="parent-control" list="parent-list" form="parent-form" aria-activedescendant="parent-option" aria-controls="parent-panel" aria-describedby="parent-description" aria-details="parent-detail" aria-errormessage="parent-error" aria-flowto="parent-heading" aria-owns="parent-owned">
+        <datalist id="parent-list"><option value="A"></datalist>
+        <span id="parent-option">候補</span>
+        <div id="parent-panel">操作対象</div>
+        <p id="parent-description">補足</p>
+        <p id="parent-detail">説明</p>
+        <p id="parent-error">エラー</p>
+        <div id="parent-owned">所有対象</div>
+        <table><tr><th id="parent-header">項目</th><td headers="parent-header">値</td></tr></table>
+        <a href="#parent-detail">詳細へ</a>
+        <svg width="1" height="1" aria-hidden="true"><defs><linearGradient id="parent-gradient"></linearGradient><symbol id="parent-symbol"></symbol></defs><rect style="fill:url('#parent-gradient')"></rect><use href="#parent-symbol" xlink:href="#parent-symbol"></use></svg>
+        <style>.fragment-shape { fill: url("#parent-gradient"); }</style>
+        <section class="fragment fragment-shape" id="nested-fragment" data-nested-fragment="true" aria-labelledby="parent-heading">
           <p>これはスライド内の入れ子要素です。</p>
         </section>
       </section>

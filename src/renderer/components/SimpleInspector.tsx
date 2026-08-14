@@ -57,6 +57,7 @@ export function SimpleInspector({
         <div className="simple-inspector__row">
           <select value={style.fontFamily ?? "Arial, sans-serif"} onChange={(event) => onStyleChange({ fontFamily: event.currentTarget.value })} aria-label="フォント">
             <option value='Arial, "Noto Sans JP", sans-serif'>Arial / Noto Sans</option>
+            <option value='"Meiryo UI", Meiryo, sans-serif'>Meiryo UI</option>
             <option value='"Yu Gothic", Meiryo, sans-serif'>游ゴシック</option>
             <option value='Georgia, "Times New Roman", serif'>Georgia</option>
             <option value='"Courier New", monospace'>Courier</option>

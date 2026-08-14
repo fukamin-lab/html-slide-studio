@@ -2915,6 +2915,10 @@ function beginOverlayTextEdit(
   }
 
   function handleKeyDown(event: KeyboardEvent): void {
+    if (event.isComposing) {
+      return;
+    }
+
     const key = event.key.toLowerCase();
     const isModifierPressed = event.ctrlKey || event.metaKey;
     if (isModifierPressed && key === "z" && !event.shiftKey) {

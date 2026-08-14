@@ -43,7 +43,7 @@ declare global {
       openDemoDocument: () => Promise<OpenHtmlDocumentResult>;
       openHtmlPath: (filePath: string) => Promise<OpenHtmlDocumentResult>;
       consumeLaunchHtml: () => Promise<OpenHtmlDocumentResult>;
-      saveHtmlDocument: (payload: { html: string; filePath: string; expectedFingerprint: string }) => Promise<SaveHtmlDocumentResult>;
+      saveHtmlDocument: (payload: { html: string; filePath: string; expectedFingerprint: string; expectedSlideCount: number }) => Promise<SaveHtmlDocumentResult>;
       importDocumentImage: (filePath: string) => Promise<ImportDocumentImageResult>;
       openPresenter: (state: PresenterSnapshot) => Promise<PresenterOpenResult>;
       updatePresenter: (state: PresenterSnapshot) => Promise<PresenterUpdateResult>;

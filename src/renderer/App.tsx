@@ -327,7 +327,8 @@ export function App(): JSX.Element {
       const result = await window.hss.saveHtmlDocument({
         html: exported.html,
         filePath: saveFilePath,
-        expectedFingerprint: saveFingerprint
+        expectedFingerprint: saveFingerprint,
+        expectedSlideCount: slides.length
       });
       if (result.canceled) return;
       if (documentRevisionRef.current !== saveRevision) return;
@@ -352,7 +353,7 @@ export function App(): JSX.Element {
       setIsSaving(false);
       void launchOpenGateRef.current?.endBlockingOperation();
     }
-  }, [clearSelection, currentSignature, documentState, manifest, sourceHtml]);
+  }, [clearSelection, currentSignature, documentState, manifest, slides.length, sourceHtml]);
 
   const handleSlideMutation = useCallback((type: "add" | "duplicate" | "move", direction?: -1 | 1): void => {
     if (!documentState || slides.length === 0) return;

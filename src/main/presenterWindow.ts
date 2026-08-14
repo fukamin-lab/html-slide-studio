@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, screen, type Rectangle } from "electron";
+import { BrowserWindow, app, ipcMain, screen, type Rectangle } from "electron";
 import { join } from "node:path";
 import { requireEditorSender } from "./editorWindowRegistry";
 import { selectPresentationDisplays } from "./presentationDisplays";
@@ -6,6 +6,9 @@ import { configureWindowSecurity } from "./security";
 import { isPresenterCommand, isPresenterSnapshot } from "../shared/presenterContract";
 import type { PresenterSnapshot } from "../renderer/types/presenter";
 import { restoreWindowPlacement, type SavedWindowPlacement } from "./windowPlacement";
+import { resolveDevelopmentRendererUrl } from "./runtimeEnvironment";
+
+declare const __HSS_DEV_RENDERER_ORIGIN__: string;
 
 let presenterWindow: BrowserWindow | null = null;
 let latestPresenterState: PresenterSnapshot | null = null;
@@ -171,7 +174,11 @@ function closePresenterOnly(): void {
 }
 
 async function loadPresenterRoute(window: BrowserWindow): Promise<void> {
-  const devServerUrl = process.env.ELECTRON_RENDERER_URL;
+  const devServerUrl = resolveDevelopmentRendererUrl(
+    process.env.ELECTRON_RENDERER_URL,
+    app.isPackaged,
+    __HSS_DEV_RENDERER_ORIGIN__
+  );
   if (devServerUrl) {
     await window.loadURL(`${devServerUrl}?view=presenter`);
   } else {

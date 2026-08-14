@@ -1,17 +1,19 @@
 import { app, dialog, ipcMain } from "electron";
 import { join, resolve } from "node:path";
 import {
+  type CanonicalFileIdentity,
   importImageForDocument,
   openHtmlDocument,
-  saveHtmlDocument,
-  type SaveHtmlDocumentPayload
+  saveHtmlDocument
 } from "./documentFiles";
+import { isPathPayload, isSavePayload } from "./filePayloadGuards";
 import { takePendingLaunchHtmlPath } from "./launchFiles";
 import { requireEditorSender } from "./editorWindowRegistry";
 import { withDocumentSaveLock } from "./documentSaveMutex";
 import { DEMO_FILE_NAME, ensureDemoWorkingCopy } from "./demoDocument";
 
-const authorizedDocuments = new Set<string>();
+type AuthorizedDocument = { fingerprint: string; identity: CanonicalFileIdentity };
+const authorizedDocuments = new Map<string, AuthorizedDocument>();
 
 export function registerFileSystemIpc(): void {
   ipcMain.handle("hss:open-html-document", async (event) => {
@@ -58,10 +60,16 @@ export function registerFileSystemIpc(): void {
       throw new Error("Invalid HTML save request");
     }
     const filePath = resolve(payload.filePath);
-    if (!authorizedDocuments.has(filePath)) {
+    const authorization = authorizedDocuments.get(filePath);
+    if (!authorization || authorization.fingerprint !== payload.expectedFingerprint) {
       throw new Error("Save is allowed only for an HTML file opened by this app session");
     }
-    return withDocumentSaveLock(filePath, async () => ({ canceled: false, ...(await saveHtmlDocument({ ...payload, filePath })) }));
+    return withDocumentSaveLock(filePath, async () => {
+      const saved = await saveHtmlDocument({ ...payload, filePath }, undefined, undefined, authorization.identity);
+      authorizedDocuments.set(filePath, { fingerprint: saved.fingerprint, identity: saved.documentIdentity });
+      const { documentIdentity: _identity, ...publicResult } = saved;
+      return { canceled: false, ...publicResult };
+    });
   });
 
   ipcMain.handle("hss:import-document-image", async (event, payload: unknown) => {
@@ -70,7 +78,8 @@ export function registerFileSystemIpc(): void {
       throw new Error("Invalid image import request");
     }
     const htmlPath = resolve(payload.filePath);
-    if (!authorizedDocuments.has(htmlPath)) {
+    const authorization = authorizedDocuments.get(htmlPath);
+    if (!authorization) {
       throw new Error("Images can be added only to an HTML file opened by this app session");
     }
 
@@ -85,7 +94,7 @@ export function registerFileSystemIpc(): void {
     }
     return withDocumentSaveLock(htmlPath, async () => ({
       canceled: false,
-      ...(await importImageForDocument(htmlPath, result.filePaths[0]))
+      ...(await importImageForDocument(htmlPath, result.filePaths[0], undefined, authorization.identity))
     }));
   });
 }
@@ -94,20 +103,8 @@ async function authorizeOpenedDocument(filePath: string) {
   const requestedPath = resolve(filePath);
   return withDocumentSaveLock(requestedPath, async () => {
     const document = await openHtmlDocument(requestedPath);
-    authorizedDocuments.add(document.filePath);
-    return { canceled: false, ...document };
+    authorizedDocuments.set(document.filePath, { fingerprint: document.fingerprint, identity: document.documentIdentity });
+    const { documentIdentity: _identity, ...publicDocument } = document;
+    return { canceled: false, ...publicDocument };
   });
-}
-
-function isPathPayload(value: unknown): value is { filePath: string } {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value) && typeof (value as { filePath?: unknown }).filePath === "string";
-}
-
-function isSavePayload(value: unknown): value is SaveHtmlDocumentPayload {
-  return Boolean(value) &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    typeof (value as { filePath?: unknown }).filePath === "string" &&
-    typeof (value as { html?: unknown }).html === "string" &&
-    typeof (value as { expectedFingerprint?: unknown }).expectedFingerprint === "string";
 }
