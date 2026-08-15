@@ -1493,11 +1493,20 @@ async function runWindowsPowerShell(
     throw new Error("SystemRoot is unavailable; safe overwrite cannot run");
   }
   const executable = join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-  return execFileAsync(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", windowsPowerShellScripts[operation]], {
+  const options = {
     encoding: "utf8",
     windowsHide: true,
     env: { ...process.env, ...operationEnvironment }
-  });
+  } as const;
+
+  switch (operation) {
+    case "move-exclusive":
+      return execFileAsync(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", windowsPowerShellScripts["move-exclusive"]], options);
+    case "replace-with-backup":
+      return execFileAsync(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", windowsPowerShellScripts["replace-with-backup"]], options);
+    case "restore-if-unchanged":
+      return execFileAsync(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", windowsPowerShellScripts["restore-if-unchanged"]], options);
+  }
 }
 
 const windowsPowerShellScripts = {
