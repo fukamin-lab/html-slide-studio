@@ -1433,7 +1433,7 @@ async function moveToUniqueRecoveryPath(sourcePath: string, prefix: string, suff
 async function moveFileExclusive(sourcePath: string, targetPath: string): Promise<void> {
   if (process.platform === "win32") {
     await runWindowsPowerShell(
-      "move-exclusive",
+      "$ErrorActionPreference='Stop'; [System.IO.File]::Move($env:HSS_MOVE_SOURCE, $env:HSS_MOVE_TARGET)",
       { HSS_MOVE_SOURCE: sourcePath, HSS_MOVE_TARGET: targetPath }
     );
     return;
@@ -1449,7 +1449,7 @@ function errorMessage(error: unknown): string {
 async function windowsReplaceWithBackup(temporaryPath: string, targetPath: string, backupPath: string): Promise<void> {
   requireWindowsFileReplace();
   await runWindowsPowerShell(
-    "replace-with-backup",
+    "$ErrorActionPreference='Stop'; [System.IO.File]::Replace($env:HSS_REPLACE_SOURCE, $env:HSS_REPLACE_TARGET, $env:HSS_REPLACE_BACKUP, $true)",
     {
       HSS_REPLACE_SOURCE: temporaryPath,
       HSS_REPLACE_TARGET: targetPath,
@@ -1465,54 +1465,7 @@ async function windowsRestoreBackupIfTargetMatches(
   expectedBackupFingerprint: string
 ): Promise<"restored" | "changed" | "backup-changed"> {
   requireWindowsFileReplace();
-  const { stdout } = await runWindowsPowerShell("restore-if-unchanged", {
-    HSS_RESTORE_BACKUP: backupPath,
-    HSS_RESTORE_TARGET: targetPath,
-    HSS_RESTORE_EXPECTED: expectedTargetFingerprint,
-    HSS_RESTORE_BACKUP_EXPECTED: expectedBackupFingerprint
-  });
-  const outcome = stdout.trim();
-  if (outcome !== "restored" && outcome !== "changed" && outcome !== "backup-changed") {
-    throw new Error(`Unexpected rollback result: ${outcome || "empty output"}`);
-  }
-  return outcome;
-}
-
-function requireWindowsFileReplace(): void {
-  if (process.platform !== "win32") {
-    throw new Error("Safe overwrite save currently requires Windows File.Replace");
-  }
-}
-
-async function runWindowsPowerShell(
-  operation: keyof typeof windowsPowerShellScripts,
-  operationEnvironment: Record<string, string>
-): Promise<{ stdout: string; stderr: string }> {
-  const systemRoot = process.env.SystemRoot;
-  if (!systemRoot) {
-    throw new Error("SystemRoot is unavailable; safe overwrite cannot run");
-  }
-  const executable = join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-  const options = {
-    encoding: "utf8",
-    windowsHide: true,
-    env: { ...process.env, ...operationEnvironment }
-  } as const;
-
-  switch (operation) {
-    case "move-exclusive":
-      return execFileAsync(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", windowsPowerShellScripts["move-exclusive"]], options);
-    case "replace-with-backup":
-      return execFileAsync(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", windowsPowerShellScripts["replace-with-backup"]], options);
-    case "restore-if-unchanged":
-      return execFileAsync(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", windowsPowerShellScripts["restore-if-unchanged"]], options);
-  }
-}
-
-const windowsPowerShellScripts = {
-  "move-exclusive": "$ErrorActionPreference='Stop'; [System.IO.File]::Move($env:HSS_MOVE_SOURCE, $env:HSS_MOVE_TARGET)",
-  "replace-with-backup": "$ErrorActionPreference='Stop'; [System.IO.File]::Replace($env:HSS_REPLACE_SOURCE, $env:HSS_REPLACE_TARGET, $env:HSS_REPLACE_BACKUP, $true)",
-  "restore-if-unchanged": [
+  const script = [
     "$ErrorActionPreference='Stop'",
     "$target = [System.IO.FileStream]::new($env:HSS_RESTORE_TARGET, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)",
     "try {",
@@ -1532,5 +1485,38 @@ const windowsPowerShellScripts = {
     "  } finally { $backup.Dispose() }",
     "  [Console]::Out.Write('restored')",
     "} finally { $target.Dispose() }"
-  ].join("; ")
-} as const;
+  ].join("; ");
+  const { stdout } = await runWindowsPowerShell(script, {
+    HSS_RESTORE_BACKUP: backupPath,
+    HSS_RESTORE_TARGET: targetPath,
+    HSS_RESTORE_EXPECTED: expectedTargetFingerprint,
+    HSS_RESTORE_BACKUP_EXPECTED: expectedBackupFingerprint
+  });
+  const outcome = stdout.trim();
+  if (outcome !== "restored" && outcome !== "changed" && outcome !== "backup-changed") {
+    throw new Error(`Unexpected rollback result: ${outcome || "empty output"}`);
+  }
+  return outcome;
+}
+
+function requireWindowsFileReplace(): void {
+  if (process.platform !== "win32") {
+    throw new Error("Safe overwrite save currently requires Windows File.Replace");
+  }
+}
+
+async function runWindowsPowerShell(
+  script: string,
+  operationEnvironment: Record<string, string>
+): Promise<{ stdout: string; stderr: string }> {
+  const systemRoot = process.env.SystemRoot;
+  if (!systemRoot) {
+    throw new Error("SystemRoot is unavailable; safe overwrite cannot run");
+  }
+  const executable = join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  return execFileAsync(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], {
+    encoding: "utf8",
+    windowsHide: true,
+    env: { ...process.env, ...operationEnvironment }
+  });
+}
