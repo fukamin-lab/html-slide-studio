@@ -1,13 +1,13 @@
 {
   "schemaVersion": 3,
-  "capturedAt": "2026-08-15T07:09:03.281Z",
+  "capturedAt": "2026-08-15T15:35:11.239Z",
   "displayMode": "multi-display",
   "presenterCapture": "physical-multi-display",
   "source": {
-    "gitCommit": "662e38d4b2ca00fb71860f8333b570a5fe31577f",
+    "gitCommit": "e447069d34a5d0f0b93cae7570c4b7b271563942",
     "gitDirty": false,
     "appVersion": "0.2.0",
-    "electronVersion": "42.8.1",
+    "electronVersion": "42.9.1",
     "command": "npm run build && node scripts/capture-user-guide.mjs",
     "platform": "win32",
     "arch": "arm64"
@@ -23,13 +23,13 @@
     "08-presenter-window.png"
   ],
   "sha256": {
-    "01-start.png": "30d1ee110f9194910ea79e83ee1d8a166e03c402cfdba54ccd810aa4417e7550",
-    "02-editor.png": "c68fbeefcf58fa101c9c9c54b5acea3ac006b03591cb21f39d634adec0528302",
-    "03-slide-operations.png": "4b6e313040943f75be6646f191a96b5dd438270e177e4a9d0c609090d5ac8c8c",
-    "04-text-edit.png": "e5fba7259528450232dd94cd6b1f704b7fef176f495f79f306042c927a3445a3",
-    "05-check.png": "26a3b68a0f45a4d9888a784e0be9be0b4f18e82abe76aec8d80f869c10706637",
-    "06-save-complete.png": "fd7bddca50890802b731caa9b49463b5aac4b63035411850e7938b8558f9c9e8",
+    "01-start.png": "9f5b7e4566de5b54ed679c682b2b54733f5e45617693dafbeddeff7bbbc43cc5",
+    "02-editor.png": "fdeab7650d26db8b0a85a2a9e58f61762ce572b05eb596082bd7591032f9146c",
+    "03-slide-operations.png": "86e4485e43e7810b8253d58c645fe7286aec31dacb8828086477cbf2657276b4",
+    "04-text-edit.png": "9d79cb7fa4db36172fe2cc2e922335b77fb4814ecf713928c75bc5cf5c309b48",
+    "05-check.png": "c70158c8116bb6e9c21d7c482078a9d435c2cb652f358f0d95f0b5521ea53f39",
+    "06-save-complete.png": "0581d5ff2ed4c0f4ffc32ebcc0f5b1d2941962956276a4c2561309a4f9d42f06",
     "07-audience-mode.png": "edd8e9032baaab120e904077c14a31b0bc9f2a16da57135058e253d11ad463e9",
-    "08-presenter-window.png": "14f5e65dc1d070e12b8f361e7d076487034a7d544da419d9c474cac4b252a999"
+    "08-presenter-window.png": "2c34d3c9aabc71d74317dd0fc0d5911dd97aef916254777c5ab41b3eb0d8c1dd"
   }
 }
