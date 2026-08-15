@@ -4,6 +4,11 @@
 
 AIで作った静的HTMLスライドを、手元で仕上げて、そのまま発表できる。
 
+## Identity and naming
+
+- Productの正式名は`HTML Slide Studio`、公開repoは`fukamin-lab/html-slide-studio`。
+- 過去のrewriteや内部保守上の識別子は、別の現行製品名として利用者へ表示しない。
+
 ## Supported deck profile
 
 - Local static HTML.
