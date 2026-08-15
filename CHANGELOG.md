@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-16
+
+### Changed
+
+- Electronを42.9.1へ更新し、同じ42系列の最新patchに含まれる安定性修正を反映
+- Lucide Reactを0.577.0へ更新し、同梱する第三者license表示を公式packageへ同期
+
 ## [0.2.0] - 2026-08-15
 
 ### Added
@@ -32,6 +39,7 @@
 - 編集用コピーとして開く8枚の同梱デモ
 - Windows ARM64向けportable EXEとZIP
 
-[Unreleased]: https://github.com/fukamin-lab/html-slide-studio/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/fukamin-lab/html-slide-studio/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/fukamin-lab/html-slide-studio/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/fukamin-lab/html-slide-studio/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/fukamin-lab/html-slide-studio/releases/tag/v0.1.0
