@@ -2,8 +2,8 @@ import type { EditableStyle, Patch, PatchTarget } from "../types/patches";
 import type { SlideDescriptor } from "../types/project";
 import { camelToKebab, cssEscape } from "./css";
 
-const ORIGINAL_TEXT_ATTR = "data-hss-original-text";
-const ORIGINAL_STYLE_ATTR = "data-hss-original-style";
+const textSnapshotsByDocument = new WeakMap<Document, Map<Element, Node[]>>();
+const styleSnapshotsByDocument = new WeakMap<Document, Map<HTMLElement, Map<string, StyleSnapshotEntry>>>();
 
 export function applyPatchesToDocument(document: Document, patches: Patch[]): string[] {
   resetPatchApplications(document);
@@ -55,8 +55,9 @@ export function applyPatchesToDocument(document: Document, patches: Patch[]): st
 }
 
 export function rememberOriginalTextForPatch(element: Element): void {
-  if (!element.hasAttribute(ORIGINAL_TEXT_ATTR)) {
-    element.setAttribute(ORIGINAL_TEXT_ATTR, element.innerHTML);
+  const snapshots = getTextSnapshots(element.ownerDocument);
+  if (!snapshots.has(element)) {
+    snapshots.set(element, Array.from(element.childNodes, (node) => node.cloneNode(true)));
   }
 }
 
@@ -104,27 +105,26 @@ export function applySlideVisibility(document: Document, currentSlideId: string 
 }
 
 function resetPatchApplications(document: Document): void {
-  for (const element of document.querySelectorAll(`[${ORIGINAL_TEXT_ATTR}]`)) {
-    element.innerHTML = element.getAttribute(ORIGINAL_TEXT_ATTR) ?? "";
-    element.removeAttribute(ORIGINAL_TEXT_ATTR);
+  const textSnapshots = textSnapshotsByDocument.get(document);
+  if (textSnapshots) {
+    for (const [element, nodes] of textSnapshots) {
+      element.replaceChildren(...nodes.map((node) => node.cloneNode(true)));
+    }
+    textSnapshotsByDocument.delete(document);
   }
 
-  for (const element of document.querySelectorAll(`[${ORIGINAL_STYLE_ATTR}]`)) {
-    if (!("style" in element)) {
-      element.removeAttribute(ORIGINAL_STYLE_ATTR);
-      continue;
-    }
-
-    const htmlElement = element as HTMLElement;
-    for (const entry of readStyleSnapshot(htmlElement)) {
-      if (entry.value) {
-        htmlElement.style.setProperty(entry.property, entry.value, entry.priority);
-      } else {
-        htmlElement.style.removeProperty(entry.property);
+  const styleSnapshots = styleSnapshotsByDocument.get(document);
+  if (styleSnapshots) {
+    for (const [element, entries] of styleSnapshots) {
+      for (const entry of entries.values()) {
+        if (entry.value) {
+          element.style.setProperty(entry.property, entry.value, entry.priority);
+        } else {
+          element.style.removeProperty(entry.property);
+        }
       }
     }
-
-    htmlElement.removeAttribute(ORIGINAL_STYLE_ATTR);
+    styleSnapshotsByDocument.delete(document);
   }
 }
 
@@ -135,7 +135,9 @@ type StyleSnapshotEntry = {
 };
 
 function storeStyleSnapshot(element: HTMLElement, properties: string[]): void {
-  const existing = new Map(readStyleSnapshot(element).map((entry) => [entry.property, entry]));
+  const documentSnapshots = getStyleSnapshots(element.ownerDocument);
+  const existing = documentSnapshots.get(element) ?? new Map<string, StyleSnapshotEntry>();
+  documentSnapshots.set(element, existing);
 
   for (const property of properties) {
     if (existing.has(property)) {
@@ -148,35 +150,26 @@ function storeStyleSnapshot(element: HTMLElement, properties: string[]): void {
       priority: element.style.getPropertyPriority(property)
     });
   }
-
-  element.setAttribute(ORIGINAL_STYLE_ATTR, JSON.stringify(Array.from(existing.values())));
 }
 
-function readStyleSnapshot(element: HTMLElement): StyleSnapshotEntry[] {
-  const raw = element.getAttribute(ORIGINAL_STYLE_ATTR);
-  if (!raw) {
-    return [];
+function getTextSnapshots(document: Document): Map<Element, Node[]> {
+  const existing = textSnapshotsByDocument.get(document);
+  if (existing) {
+    return existing;
   }
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed.filter(isStyleSnapshotEntry);
-  } catch {
-    return [];
-  }
+  const created = new Map<Element, Node[]>();
+  textSnapshotsByDocument.set(document, created);
+  return created;
 }
 
-function isStyleSnapshotEntry(value: unknown): value is StyleSnapshotEntry {
-  if (!value || typeof value !== "object") {
-    return false;
+function getStyleSnapshots(document: Document): Map<HTMLElement, Map<string, StyleSnapshotEntry>> {
+  const existing = styleSnapshotsByDocument.get(document);
+  if (existing) {
+    return existing;
   }
-
-  const maybe = value as Partial<StyleSnapshotEntry>;
-  return typeof maybe.property === "string" && typeof maybe.value === "string" && typeof maybe.priority === "string";
+  const created = new Map<HTMLElement, Map<string, StyleSnapshotEntry>>();
+  styleSnapshotsByDocument.set(document, created);
+  return created;
 }
 
 function findPatchTarget(document: Document, target: PatchTarget): Element | null {

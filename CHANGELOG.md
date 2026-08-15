@@ -4,12 +4,20 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-15
+
 ### Added
 
 - 表示中のslideを切り替えずに全slideを一括検査し、指摘から該当slideと要素へ移動できる発表前check
 - Windows ARM64向け通常インストーラー。インストール後は展開済みpayloadを直接起動し、portable EXEの起動ごとの自己展開を回避
 - Windows x64向けinstaller、portable EXE、ZIPとnative x64 CI job
 - architecture定義、成果物名、PE検証、checksum生成を共通moduleへ集約し、ARM64／x64の配布工程を同じ契約で保守
+
+### Fixed
+
+- 正常な折返しや`overflow: visible`の字形領域を文字clippingと誤判定せず、実際に隠れる／scrollを要する文字だけを発表前checkで検出
+- 入力HTMLの危険なURL方式と`srcdoc`を除去し、編集前DOMの復元値を入力attributeから分離
+- Electron実体pathをpackage内の`dist`直下へ限定
 
 ## [0.1.0] - 2026-08-11
 
@@ -24,5 +32,6 @@
 - 編集用コピーとして開く8枚の同梱デモ
 - Windows ARM64向けportable EXEとZIP
 
-[Unreleased]: https://github.com/fukamin-lab/html-slide-studio/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/fukamin-lab/html-slide-studio/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/fukamin-lab/html-slide-studio/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/fukamin-lab/html-slide-studio/releases/tag/v0.1.0

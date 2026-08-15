@@ -11,6 +11,7 @@ const ALLOWED_FILES = new Set([
   ".gitattributes",
   ".gitignore",
   "CHANGELOG.md",
+  "CODE_OF_CONDUCT.md",
   "CONTRIBUTING.md",
   "LICENSE",
   "README.md",
@@ -36,6 +37,7 @@ const ALLOWED_FILES = new Set([
   "scripts/export-public-source.mjs",
   "scripts/lib/local-endpoint.d.mts",
   "scripts/lib/local-endpoint.mjs",
+  "scripts/lib/electron-binary-path.mjs",
   "scripts/lib/windows-package.mjs",
   "scripts/measure-startup.mjs",
   "scripts/package-windows.mjs",
@@ -44,7 +46,7 @@ const ALLOWED_FILES = new Set([
   "scripts/write-release-checksums.mjs",
   "tsconfig.json"
 ]);
-const ALLOWED_PREFIXES = [".github/", "demo/", "docs/user-guide/", "src/", "tests/"];
+const ALLOWED_PREFIXES = [".github/", "demo/", "docs/release-notes/", "docs/user-guide/", "src/", "tests/"];
 
 const sourceRoot = resolve(process.cwd());
 const markerState = await Promise.all(["AGENTS.md", "PROJECT_ID.json", "LOCAL_ENDPOINT.json"].map((name) => pathExists(resolve(sourceRoot, name))));

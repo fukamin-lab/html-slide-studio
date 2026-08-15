@@ -1433,7 +1433,7 @@ async function moveToUniqueRecoveryPath(sourcePath: string, prefix: string, suff
 async function moveFileExclusive(sourcePath: string, targetPath: string): Promise<void> {
   if (process.platform === "win32") {
     await runWindowsPowerShell(
-      "$ErrorActionPreference='Stop'; [System.IO.File]::Move($env:HSS_MOVE_SOURCE, $env:HSS_MOVE_TARGET)",
+      "move-exclusive",
       { HSS_MOVE_SOURCE: sourcePath, HSS_MOVE_TARGET: targetPath }
     );
     return;
@@ -1449,7 +1449,7 @@ function errorMessage(error: unknown): string {
 async function windowsReplaceWithBackup(temporaryPath: string, targetPath: string, backupPath: string): Promise<void> {
   requireWindowsFileReplace();
   await runWindowsPowerShell(
-    "$ErrorActionPreference='Stop'; [System.IO.File]::Replace($env:HSS_REPLACE_SOURCE, $env:HSS_REPLACE_TARGET, $env:HSS_REPLACE_BACKUP, $true)",
+    "replace-with-backup",
     {
       HSS_REPLACE_SOURCE: temporaryPath,
       HSS_REPLACE_TARGET: targetPath,
@@ -1465,28 +1465,7 @@ async function windowsRestoreBackupIfTargetMatches(
   expectedBackupFingerprint: string
 ): Promise<"restored" | "changed" | "backup-changed"> {
   requireWindowsFileReplace();
-  const script = [
-    "$ErrorActionPreference='Stop'",
-    "$target = [System.IO.FileStream]::new($env:HSS_RESTORE_TARGET, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)",
-    "try {",
-    "  $sha = [System.Security.Cryptography.SHA256]::Create()",
-    "  try { $actual = ([System.BitConverter]::ToString($sha.ComputeHash($target))).Replace('-', '').ToLowerInvariant() } finally { $sha.Dispose() }",
-    "  if ($actual -ne $env:HSS_RESTORE_EXPECTED) { [Console]::Out.Write('changed'); return }",
-    "  $backup = [System.IO.FileStream]::new($env:HSS_RESTORE_BACKUP, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)",
-    "  try {",
-    "    $backupSha = [System.Security.Cryptography.SHA256]::Create()",
-    "    try { $backupActual = ([System.BitConverter]::ToString($backupSha.ComputeHash($backup))).Replace('-', '').ToLowerInvariant() } finally { $backupSha.Dispose() }",
-    "    if ($backupActual -ne $env:HSS_RESTORE_BACKUP_EXPECTED) { [Console]::Out.Write('backup-changed'); return }",
-    "    $backup.Position = 0",
-    "    $target.Position = 0",
-    "    $target.SetLength(0)",
-    "    $backup.CopyTo($target)",
-    "    $target.Flush($true)",
-    "  } finally { $backup.Dispose() }",
-    "  [Console]::Out.Write('restored')",
-    "} finally { $target.Dispose() }"
-  ].join("; ");
-  const { stdout } = await runWindowsPowerShell(script, {
+  const { stdout } = await runWindowsPowerShell("restore-if-unchanged", {
     HSS_RESTORE_BACKUP: backupPath,
     HSS_RESTORE_TARGET: targetPath,
     HSS_RESTORE_EXPECTED: expectedTargetFingerprint,
@@ -1506,7 +1485,7 @@ function requireWindowsFileReplace(): void {
 }
 
 async function runWindowsPowerShell(
-  script: string,
+  operation: keyof typeof windowsPowerShellScripts,
   operationEnvironment: Record<string, string>
 ): Promise<{ stdout: string; stderr: string }> {
   const systemRoot = process.env.SystemRoot;
@@ -1514,9 +1493,35 @@ async function runWindowsPowerShell(
     throw new Error("SystemRoot is unavailable; safe overwrite cannot run");
   }
   const executable = join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-  return execFileAsync(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], {
+  return execFileAsync(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", windowsPowerShellScripts[operation]], {
     encoding: "utf8",
     windowsHide: true,
     env: { ...process.env, ...operationEnvironment }
   });
 }
+
+const windowsPowerShellScripts = {
+  "move-exclusive": "$ErrorActionPreference='Stop'; [System.IO.File]::Move($env:HSS_MOVE_SOURCE, $env:HSS_MOVE_TARGET)",
+  "replace-with-backup": "$ErrorActionPreference='Stop'; [System.IO.File]::Replace($env:HSS_REPLACE_SOURCE, $env:HSS_REPLACE_TARGET, $env:HSS_REPLACE_BACKUP, $true)",
+  "restore-if-unchanged": [
+    "$ErrorActionPreference='Stop'",
+    "$target = [System.IO.FileStream]::new($env:HSS_RESTORE_TARGET, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)",
+    "try {",
+    "  $sha = [System.Security.Cryptography.SHA256]::Create()",
+    "  try { $actual = ([System.BitConverter]::ToString($sha.ComputeHash($target))).Replace('-', '').ToLowerInvariant() } finally { $sha.Dispose() }",
+    "  if ($actual -ne $env:HSS_RESTORE_EXPECTED) { [Console]::Out.Write('changed'); return }",
+    "  $backup = [System.IO.FileStream]::new($env:HSS_RESTORE_BACKUP, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)",
+    "  try {",
+    "    $backupSha = [System.Security.Cryptography.SHA256]::Create()",
+    "    try { $backupActual = ([System.BitConverter]::ToString($backupSha.ComputeHash($backup))).Replace('-', '').ToLowerInvariant() } finally { $backupSha.Dispose() }",
+    "    if ($backupActual -ne $env:HSS_RESTORE_BACKUP_EXPECTED) { [Console]::Out.Write('backup-changed'); return }",
+    "    $backup.Position = 0",
+    "    $target.Position = 0",
+    "    $target.SetLength(0)",
+    "    $backup.CopyTo($target)",
+    "    $target.Flush($true)",
+    "  } finally { $backup.Dispose() }",
+    "  [Console]::Out.Write('restored')",
+    "} finally { $target.Dispose() }"
+  ].join("; ")
+} as const;
