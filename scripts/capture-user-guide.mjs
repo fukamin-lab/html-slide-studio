@@ -49,7 +49,10 @@ try {
   await capture(cdp, "04-text-edit.png");
 
   await clickButtonContainingText(cdp, ".editor-toolbar button", "確認");
-  await waitForEval(cdp, "Boolean(document.querySelector('.check-panel'))");
+  await waitForEval(cdp, `(() => {
+    const panel = document.querySelector('.check-panel');
+    return panel?.textContent.includes('全4枚で') && panel?.textContent.includes('小さい注釈');
+  })()`, 30_000);
   await capture(cdp, "05-check.png");
   await click(cdp, '.check-panel button[aria-label="閉じる"]');
 

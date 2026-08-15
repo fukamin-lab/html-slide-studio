@@ -22,6 +22,7 @@ export type ReviewTarget = {
   type: "text" | "image" | "shape" | "unknown";
   label: string;
   tagName?: string;
+  selector?: string;
   slideId: string | null;
   text?: string;
   bounds: ReviewBounds;
@@ -37,9 +38,14 @@ export type ReviewTarget = {
 };
 
 export type ReviewExternalReference = {
-  kind: "src" | "href";
+  kind: "attribute" | "srcset" | "css";
   value: string;
   label: string;
+  attributeName?: string;
+  slideId?: string;
+  targetId?: string;
+  targetLabel?: string;
+  targetSource?: ReviewTarget["source"];
 };
 
 export type ReviewSnapshot = {
@@ -58,8 +64,12 @@ export type ReviewIssue = {
   kind: ReviewIssueKind;
   title: string;
   detail: string;
+  slideId?: string;
+  slideLabel?: string;
+  slideIndex?: number;
   targetId?: string;
   targetLabel?: string;
+  targetSource?: ReviewTarget["source"];
   recommendation: string;
 };
 
@@ -69,6 +79,7 @@ export type ReviewSummary = {
   warningCount: number;
   infoCount: number;
   issueCount: number;
+  checkedSlideCount: number;
   checkedAt: string;
 };
 

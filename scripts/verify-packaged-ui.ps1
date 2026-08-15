@@ -2,10 +2,17 @@ param(
   [Parameter(Mandatory = $true)]
   [int]$RootProcessId,
 
-  [int]$TimeoutMs = 60000
+  [int]$TimeoutMs = 60000,
+
+  [switch]$ProbeOnly,
+
+  [switch]$CloseAfterProbe
 )
 
 $ErrorActionPreference = "Stop"
+if ($CloseAfterProbe -and -not $ProbeOnly) {
+  throw "-CloseAfterProbe requires -ProbeOnly."
+}
 Add-Type -AssemblyName UIAutomationClient
 
 function ConvertFrom-HexCharacters {
@@ -96,17 +103,38 @@ function Invoke-Button {
 $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
 $mainWindow = $null
 $demoButton = $null
-while ([DateTime]::UtcNow -lt $deadline -and $null -eq $demoButton) {
+while ([DateTime]::UtcNow -lt $deadline) {
   try {
     $allowed = Get-DescendantProcessIds -ParentId $RootProcessId
     $mainWindow = Find-OwnedMainWindow -AllowedProcessIds $allowed
     if ($null -ne $mainWindow) {
+      if ($ProbeOnly) { break }
       $demoButton = Find-DescendantButton -Window $mainWindow -Name $demoButtonName
+      if ($null -ne $demoButton) { break }
     }
   } catch [System.Windows.Automation.ElementNotAvailableException] {
     $mainWindow = $null
   }
-  if ($null -eq $demoButton) { Start-Sleep -Milliseconds 100 }
+  Start-Sleep -Milliseconds 100
+}
+if ($ProbeOnly) {
+  if ($null -eq $mainWindow) {
+    throw "Packaged main window did not become visible through Windows accessibility."
+  }
+  $visibleAtUnixMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+  $probeResult = [ordered]@{
+    pass = $true
+    ready = $true
+    processId = [int]$mainWindow.Current.ProcessId
+    visibleAtUnixMs = $visibleAtUnixMs
+  }
+  if ($CloseAfterProbe) {
+    $windowPattern = $mainWindow.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern)
+    ([System.Windows.Automation.WindowPattern]$windowPattern).Close()
+    $probeResult.closed = $true
+  }
+  $probeResult | ConvertTo-Json -Compress
+  exit 0
 }
 if ($null -eq $demoButton) {
   throw "Packaged Welcome screen did not expose the demo action through Windows accessibility."

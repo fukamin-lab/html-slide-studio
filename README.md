@@ -29,15 +29,17 @@ AIで作った静的HTMLスライドを、Windows上で最後に直し、その�
 
 ## まず試す
 
-1. [Releases](https://github.com/fukamin-lab/html-slide-studio/releases)から `HTML Slide Studio.exe` をダウンロードします。
-2. EXEを任意のフォルダへ置き、実行します。インストールは不要です。
+1. [Releases](https://github.com/fukamin-lab/html-slide-studio/releases)から、PCに合う `HTML Slide Studio Setup <version>-arm64.exe` または `HTML Slide Studio Setup <version>-x64.exe` をダウンロードします。
+2. インストーラーを実行し、デスクトップまたはスタートメニューのショートカットから起動します。
 3. 起動トップページの `デモを開く` を選びます。
 4. 文字の変更、スライドの複製、ノート、保存、発表を順に試します。
 
 同梱デモはアプリのデータ領域へ作る編集用コピーです。自由に上書きしても、EXE内の原本は変わりません。
 
 > [!WARNING]
-> v0.1.0は **Windows ARM64専用** です。Snapdragon搭載Windows PCを対象にしています。コード署名をしていないため、初回起動時にWindowsの警告が表示される場合があります。警告を回避する目的でセキュリティ機能を無効化しないでください。配布元とSHA-256を確認してから実行してください。
+> 対応環境は **Windows 10以降の64-bit ARM64／x64** です。Snapdragon搭載PCはARM64版、Intel／AMD搭載PCはx64版を選んでください。x64版はARM64上のWindows emulationまで確認済みで、native x64実機では未確認の暫定版です。コード署名をしていないため、初回起動時にWindowsの警告が表示される場合があります。警告を回避する目的でセキュリティ機能を無効化しないでください。配布元とSHA-256を確認してから実行してください。
+
+詳しい対応状況と実機確認範囲は[対応環境](docs/SUPPORT_MATRIX.md)を参照してください。
 
 詳しい操作は[スクリーンショット付きユーザーガイド](docs/user-guide/index.html)を参照してください。
 
@@ -66,7 +68,7 @@ AIで作った静的HTMLスライドを、Windows上で最後に直し、その�
 - JavaScriptの実行を前提にした動的スライド
 - クラウド同期、認証、共同編集、変更履歴
 - PowerPoint／PDFへの変換
-- x64／x86版Windows、macOS、Linux向けの配布物
+- x86（32-bit）Windows、macOS、Linux向けの配布物
 
 ## 基本操作
 
@@ -74,7 +76,7 @@ AIで作った静的HTMLスライドを、Windows上で最後に直し、その�
 2. 左の一覧でスライドを選びます。
 3. スライド上の文字や画像を選び、右側で修正します。
 4. 必要なら `テキスト`、`画像`、左上の `＋`、`複製`、上下矢印を使います。
-5. 下部に発表者ノートを書き、`確認` で問題を確認します。
+5. 下部に発表者ノートを書き、`確認` で全スライドの問題をまとめて確認します。対象が示される指摘を押すと、該当スライドと要素へ移動します。資料全体に関わる外部参照など、特定要素へ移動できない指摘もあります。
 6. `保存` で同じHTMLへ上書きします。
 7. `発表` で発表モードに入ります。
 
@@ -91,7 +93,7 @@ AIで作った静的HTMLスライドを、Windows上で最後に直し、その�
 
 ## ローカルで開発する
 
-必要なものはNode.js 22.12.0以降とWindowsです。
+必要なものはNode.js 22.12.0以降とWindows 10以降の64-bit環境です。
 
 ```powershell
 git clone https://github.com/fukamin-lab/html-slide-studio.git
@@ -117,18 +119,21 @@ npm run verify
 
 公開cloneでは`public:source:check`がorigin、clean状態、ignored/untracked file不在、公開境界をまとめて検査します。内部正本ではallowlist snapshotを新しい一時directoryへ作り、内部識別子不在を独立に検査して、後続gateを実行する候補pathを表示します。
 
-`npm run verify` は単体テスト、型検査、実Electronを操作するE2Eを実行します。デモopen、スライド操作、ノート、文字追加、上書き保存、再起動後の復元、発表者画面、対応外構造での安全な機能制限を確認します。
+`npm run verify` は単体テスト、型検査、実Electronを操作するE2Eを実行します。デモopen、全スライドの発表前チェックと指摘先への移動、スライド操作、ノート、文字追加、上書き保存、再起動後の復元、発表者画面、対応外構造での安全な機能制限を確認します。
 
-### Windows ARM64版を作る
+### Windows版を作る
 
 ```powershell
 npm run package:win
 npm run verify:package
+npm run release:checksums
 ```
 
-成果物は `release/` に出力されます。パッケージ検証ではportable EXEをremote debuggingなしで実際に起動し、製品名、ARM64 PE、同梱デモ、未保存確認、正常終了、およびsecurityを弱める起動optionの拒否を確認します。公開やコード署名は行いません。
+`package:win`はARM64／x64をまとめて生成し、`verify:package`は実行中のPCと同じarchitectureを検証します。片方だけを作る場合は`package:win:arm64`または`package:win:x64`を使います。成果物は `release/` にarchitecture付きの名前で出力されます。通常利用は `HTML Slide Studio Setup <version>-<arch>.exe` で一度インストールし、デスクトップまたはスタートメニューのショートカットから起動してください。インストール後は展開済みpayloadを直接起動するため、portable EXEより高速です。
 
-リリース担当者向けの再現手順は[docs/RELEASE.md](docs/RELEASE.md)にあります。
+パッケージ検証ではarchitectureごとにinstaller、portable、ZIP、PE machine、全payload hash、同梱デモ、未保存確認、正常終了、およびsecurityを弱める起動optionの拒否を確認します。CIもARM64／x64を別runnerで検証します。公開、インストールの自動実行、コード署名は行いません。
+
+リリース担当者向けの再現手順は[docs/RELEASE.md](docs/RELEASE.md)、保守手順は[docs/MAINTENANCE.md](docs/MAINTENANCE.md)にあります。
 
 ## プライバシーとセキュリティ
 

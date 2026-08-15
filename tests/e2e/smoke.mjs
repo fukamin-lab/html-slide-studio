@@ -65,6 +65,48 @@ try {
   assert.equal(startup.canvasFitNoScroll, true);
   assert.equal(startup.bridge, true);
 
+  await clickAtSelector(cdp, '.editor-toolbar button[aria-label="確認"]');
+  await waitForEval(cdp, `(() => {
+    const panel = document.querySelector('.check-panel');
+    return panel?.textContent.includes('全2枚で') && panel?.textContent.includes('まとめ /') && panel?.textContent.includes('文字が小さすぎる可能性があります');
+  })()`, 30_000);
+  const deckReview = await evaluate(cdp, `(() => ({
+    summary: document.querySelector('.check-panel__heading span')?.textContent,
+    issues: Array.from(document.querySelectorAll('.check-issue')).map((issue) => issue.textContent.trim()),
+    currentSlide: document.querySelector('.slide-list__item[aria-current="page"] .slide-list__label')?.textContent
+  }))()`);
+  assert.match(deckReview.summary ?? "", /全2枚で\d+件/);
+  assert.ok(deckReview.issues.some((issue) => issue.includes('2. まとめ') && issue.includes('小さい注釈')));
+  assert.ok(deckReview.issues.some((issue) => issue.includes('2. まとめ') && issue.includes('flex配置を保って測定する確認文') && issue.includes('枠からはみ出している')));
+  assert.ok(!deckReview.issues.some((issue) => issue.includes('可視グリフの正常な行高')), "visible glyph ink outside the line box is not clipping");
+  assert.ok(!deckReview.issues.some((issue) => issue.includes('正常に折り返す確認文')), "healthy wrapping is not clipping");
+  assert.ok(deckReview.issues.some((issue) => issue.includes('2. まとめ') && issue.includes('外部参照の確認') && issue.includes('外部ファイルに依存しています')));
+  assert.ok(deckReview.issues.some((issue) => issue.includes('2. まとめ') && issue.includes('review-source.png') && issue.includes('外部ファイルに依存しています')));
+  assert.equal(deckReview.currentSlide, "はじめに", "deck-wide review must not visibly page through the slides");
+
+  await clickAtSelector(cdp, '.check-issue--warning');
+  await waitForEval(cdp, `(() => {
+    const active = document.querySelector('.slide-list__item[aria-current="page"] .slide-list__label')?.textContent;
+    return active === 'まとめ' && document.querySelectorAll('.selection-outline').length === 1;
+  })()`);
+  await clickAtSelector(cdp, '.slide-list__item:nth-child(1) .slide-list__thumb');
+  await clickButtonContainingText(cdp, '.check-issue', '外部ファイルに依存しています');
+  await waitForEval(cdp, `(() => {
+    const active = document.querySelector('.slide-list__item[aria-current="page"] .slide-list__label')?.textContent;
+    const frame = document.querySelector('iframe.slide-frame');
+    const selected = frame?.contentDocument?.querySelector('#fixture-external-link');
+    return active === 'まとめ' && selected?.getAttribute('data-hss-id') && document.querySelectorAll('.selection-outline').length === 1;
+  })()`);
+  await clickAtSelector(cdp, '.slide-list__item:nth-child(1) .slide-list__thumb');
+  await clickButtonContainingText(cdp, '.check-issue', 'review-source.png');
+  await waitForEval(cdp, `(() => {
+    const active = document.querySelector('.slide-list__item[aria-current="page"] .slide-list__label')?.textContent;
+    return active === 'まとめ' && document.querySelectorAll('.selection-outline').length === 1;
+  })()`);
+  await clickAtSelector(cdp, '.check-panel__heading button[aria-label="閉じる"]');
+  await clickAtSelector(cdp, '.slide-list__item:nth-child(1) .slide-list__thumb');
+  await waitForEval(cdp, `document.querySelector('.slide-list__item[aria-current="page"] .slide-list__label')?.textContent === 'はじめに'`);
+
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 760, height: 560, deviceScaleFactor: 1, mobile: false });
   await waitForEval(cdp, "window.innerWidth === 760 && window.innerHeight === 560");
   const narrowLayout = await evaluate(cdp, `(() => {
@@ -274,15 +316,14 @@ try {
   const ids = [...savedHtml.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
   assert.equal(new Set(ids).size, ids.length, "duplicated slide IDs must be unique");
 
-  await clickButtonByText(cdp, ".editor-toolbar button", "確認");
+  await clickAtSelector(cdp, '.editor-toolbar button[aria-label^="確認"]');
   await waitForEval(cdp, "Boolean(document.querySelector('.check-panel'))");
   await clickButtonByText(cdp, ".editor-toolbar button", "発表");
   await waitForEval(cdp, "Boolean(document.querySelector('.audience-mode'))", 20_000);
   const presentationMode = await waitForEval(cdp, `(() => {
-    const message = document.querySelector('.app-status__message')?.textContent ?? '';
-    if (message.includes('発表者画面と投映画面を開きました')) return 'dual';
-    if (message.includes('全画面表示を開始しました')) return 'single';
-    return '';
+    const audience = document.querySelector('.audience-mode');
+    if (!audience) return '';
+    return audience.querySelector('.audience-mode__controls') ? 'single' : 'dual';
   })()`, 20_000);
   const dualModeExpected = presentationMode === "dual";
   if (dualModeExpected) {
@@ -523,7 +564,7 @@ try {
   });
   assert.match(presenterEvidence, /"reopenedSaveChain": true/);
 
-  console.log(JSON.stringify({ pass: true, slides: 4, overwrite: true, reopen: true, presenterNotesRoundTrip, presenterDrawingSynced, reopenedNotesInPresenter: true, nestedReveal: true, duplicateReferencesRemapped: true, unsupportedMutationDisabled: true, mixedTagMutationDisabled: true, screenshotCaptured: true }, null, 2));
+  console.log(JSON.stringify({ pass: true, slides: 4, deckWideReview: true, overwrite: true, reopen: true, presenterNotesRoundTrip, presenterDrawingSynced, reopenedNotesInPresenter: true, nestedReveal: true, duplicateReferencesRemapped: true, unsupportedMutationDisabled: true, mixedTagMutationDisabled: true, screenshotCaptured: true }, null, 2));
 } catch (error) {
   if (session?.cdp) {
     try {

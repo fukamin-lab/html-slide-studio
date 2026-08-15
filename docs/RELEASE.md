@@ -1,6 +1,6 @@
 # Release process
 
-リリースは、公開リポジトリのclean cloneとWindows ARM64端末から作成します。内部開発リポジトリの生成物をそのまま公開しません。
+リリースは、公開リポジトリのclean cloneからARM64／x64のarchitecture別成果物を作成します。内部開発リポジトリの生成物をそのまま公開しません。
 
 ## 1. Source gate
 
@@ -24,27 +24,34 @@ npm run verify
 - CIがmainの同一commitで成功している
 - `git status --short` が空である
 - README、CHANGELOG、ライセンス、第三者表示が対象バージョンと一致する
-- ARM64限定、未署名であることがRelease notesに明記されている
+- Windows 10以降のARM64／x64対応、x64はnative実機受入まで暫定版であること、architectureの選び方、未署名であることがRelease notesに明記されている
 
 ## 2. Package gate
 
 ```powershell
 npm run package:win
-npm run verify:package
+npm run verify:packages
 npm run release:checksums
 ```
 
+`verify:packages`はARM64端末ではARM64 nativeとx64 emulationを検証できます。正式なReleaseでは、CIのnative ARM64／native x64 jobが同一commitで成功していることも必須です。起動速度を再計測する場合は、対象端末で`npm run measure:startup -- --arch=arm64`または`--arch=x64`を実行します。
+
 生成物:
 
-- `release/HTML Slide Studio.exe`
+- `release/HTML Slide Studio Setup <version>-arm64.exe`
+- `release/HTML Slide Studio Setup <version>-x64.exe`
+- `release/HTML Slide Studio-<version>-arm64-portable.exe`
+- `release/HTML Slide Studio-<version>-x64-portable.exe`
 - `release/HTML Slide Studio-<version>-arm64-win.zip`
+- `release/HTML Slide Studio-<version>-x64-win.zip`
 - `release/SHA256SUMS.txt`
 
-`verify:package` はunpacked payloadのPE machineがARM64 `0xAA64`であること、ライセンスと第三者表示の内容一致、Electron／Chromiumライセンス、app.asarの不要なnode_modules・内部参照不在、securityを弱める起動optionの拒否を検査します。さらにportable EXEをremote debuggingなしで実起動し、Windows accessibility経由でトップ画面から8枚デモを開けること、文字追加で未保存になること、終了キャンセル・再終了・破棄後の自然終了を確認します。
+architecture別の`verify:package:<arch>`は、installerがZIP payloadを内包すること、unpacked payloadのPE machineがARM64 `0xAA64`またはx64 `0x8664`であること、installer内全fileとunpacked payloadのpath／hash一致、ライセンスと第三者表示、Electron fuses、app.asarの不要なnode_modules・内部参照不在、securityを弱める起動optionの拒否を検査します。ARM64 installerで7z payloadを使うとlegacy Nsis7z decoderがEXE／DLLを欠落させるため、両architecture共通のZIP固定を解除しないでください。さらにportable EXEをremote debuggingなしで実起動し、Windows accessibility経由でトップ画面から8枚デモを開けること、文字追加で未保存になること、終了キャンセル・再終了・破棄後の自然終了を確認します。
 
 ## 3. Human acceptance
 
-- portable EXEをダブルクリックして起動する
+- 端末に合うarchitectureのインストーラーをダブルクリックし、デスクトップまたはスタートメニューのショートカットから起動する
+- install先に`HTML Slide Studio.exe`と主要DLLが存在し、shortcutのtargetがそのEXEを指すことを確認する
 - デモを開き、文字編集、スライド切替、上書き保存、再openを確認する
 - 発表モードでレーザー、ペン、ノート、終了を確認する
 - 可能なら物理2画面で投映画面と発表者画面の配置・終了後の復元を確認する
@@ -52,4 +59,4 @@ npm run release:checksums
 
 ## 4. Draft release
 
-GitHub Releaseは最初にDraftで作成します。EXE、ZIP、`SHA256SUMS.txt`を添付し、所有者が内容と実機受け入れ結果を確認してから公開します。タグやReleaseをCIから自動公開しません。
+GitHub Releaseは最初にDraftで作成します。ARM64／x64それぞれのインストーラー、portable EXE、ZIPと`SHA256SUMS.txt`を添付し、所有者が内容と実機受け入れ結果を確認してから公開します。タグやReleaseをCIから自動公開しません。

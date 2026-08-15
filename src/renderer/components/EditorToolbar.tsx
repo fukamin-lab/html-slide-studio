@@ -5,6 +5,7 @@ type EditorToolbarProps = {
   isDirty: boolean;
   isSaving: boolean;
   isOpening: boolean;
+  isReviewing: boolean;
   canUndo: boolean;
   canRedo: boolean;
   checkIssueCount: number;
@@ -23,6 +24,7 @@ export function EditorToolbar({
   isDirty,
   isSaving,
   isOpening,
+  isReviewing,
   canUndo,
   canRedo,
   checkIssueCount,
@@ -65,8 +67,9 @@ export function EditorToolbar({
       <div className="editor-toolbar__group" aria-label="確認と発表">
         <ToolbarButton
           icon={<ScanSearch size={17} />}
-          label={checkIssueCount > 0 ? `確認 ${checkIssueCount}` : "確認"}
+          label={isReviewing ? "確認中" : checkIssueCount > 0 ? `確認 ${checkIssueCount}` : "確認"}
           onClick={onCheck}
+          disabled={isReviewing}
         />
         <ToolbarButton icon={<MonitorPlay size={17} />} label="発表" onClick={onPresent} primary />
       </div>

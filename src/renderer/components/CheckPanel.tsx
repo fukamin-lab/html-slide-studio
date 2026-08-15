@@ -3,24 +3,31 @@ import type { ReviewIssue, ReviewResult } from "../types/review";
 
 type CheckPanelProps = {
   result: ReviewResult;
+  isReviewing: boolean;
   onSelectIssue: (issue: ReviewIssue) => void;
   onClose: () => void;
 };
 
-export function CheckPanel({ result, onSelectIssue, onClose }: CheckPanelProps): JSX.Element {
+export function CheckPanel({ result, isReviewing, onSelectIssue, onClose }: CheckPanelProps): JSX.Element {
   const blockingIssues = result.issues.filter((issue) => issue.severity !== "info");
   return (
     <aside className="check-panel" aria-label="発表前の確認">
       <div className="check-panel__heading">
         <div>
           <strong>発表前の確認</strong>
-          <span>{blockingIssues.length === 0 ? "大きな問題は見つかりませんでした" : `${blockingIssues.length}件を確認してください`}</span>
+          <span>{isReviewing
+            ? "全スライドを確認しています…"
+            : blockingIssues.length === 0
+              ? `全${result.summary.checkedSlideCount}枚に大きな問題は見つかりませんでした`
+              : `全${result.summary.checkedSlideCount}枚で${blockingIssues.length}件を確認してください`}</span>
         </div>
         <button type="button" onClick={onClose} aria-label="閉じる"><X size={16} /></button>
       </div>
       <div className="check-panel__body">
-        {result.issues.length === 0 ? (
-          <div className="check-panel__empty"><CheckCircle2 size={22} /><span>このスライドは発表できる状態です。</span></div>
+        {isReviewing ? (
+          <div className="check-panel__empty" role="status"><Info size={22} /><span>各スライドの文字・画像・配置を確認しています。</span></div>
+        ) : result.issues.length === 0 ? (
+          <div className="check-panel__empty"><CheckCircle2 size={22} /><span>全スライドを発表できる状態です。</span></div>
         ) : result.issues.map((issue) => (
           <button
             type="button"
@@ -58,5 +65,9 @@ function translateTitle(issue: ReviewIssue): string {
 }
 
 function translateDetail(issue: ReviewIssue): string {
-  return issue.targetLabel ? `${issue.targetLabel} — ${issue.detail}` : issue.detail;
+  const slide = issue.slideLabel
+    ? `${typeof issue.slideIndex === "number" ? `${issue.slideIndex + 1}. ` : ""}${issue.slideLabel}`
+    : null;
+  const target = issue.targetLabel ? `${issue.targetLabel} — ${issue.detail}` : issue.detail;
+  return slide ? `${slide} / ${target}` : target;
 }

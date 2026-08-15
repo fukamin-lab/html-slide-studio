@@ -16,7 +16,14 @@ import {
   selectElementsInRect
 } from "../editor/selection";
 import { documentAssetUrl } from "../editor/assetUrl";
+import {
+  extractExternalReferenceValues,
+  REVIEW_CSS_URL_ATTRIBUTES,
+  REVIEW_URL_ATTRIBUTES,
+  type ReviewReferenceSource
+} from "../editor/reviewReferences";
 import { prepareSlideDocument } from "../editor/slideDetection";
+import { isClippedTextOverflow } from "../editor/textOverflow";
 import { formatTranslate, parseTranslate } from "../editor/transform";
 import { useI18n } from "../i18n";
 import type { EditableStyle, Overlay, Patch } from "../types/patches";
@@ -38,6 +45,7 @@ export type CanvasZoomMode = "fit" | "manual";
 
 type CanvasStageProps = {
   sourceHtml: string;
+  reviewHtml: string | null;
   sourceBaseHref?: string;
   patches: Patch[];
   overlays: Overlay[];
@@ -79,11 +87,12 @@ type CanvasStageProps = {
   onNudge: (deltaX: number, deltaY: number, options?: { historyGroup?: string }) => void;
   onRuntimeWarnings: (warnings: string[]) => void;
   reviewRequestId: number;
-  onReviewSnapshot: (snapshot: ReviewSnapshot) => void;
+  onReviewSnapshots: (requestId: number, snapshots: ReviewSnapshot[]) => void;
 };
 
 export function CanvasStage({
   sourceHtml,
+  reviewHtml,
   sourceBaseHref,
   patches,
   overlays,
@@ -125,10 +134,11 @@ export function CanvasStage({
   onNudge,
   onRuntimeWarnings,
   reviewRequestId,
-  onReviewSnapshot
+  onReviewSnapshots
 }: CanvasStageProps): JSX.Element {
   const { t } = useI18n();
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const reviewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const selectedElementsRef = useRef<SelectedElement[]>([]);
@@ -150,6 +160,10 @@ export function CanvasStage({
   }, []);
 
   const prepared = useMemo(() => prepareSlideDocument(sourceHtml, sourceBaseHref), [sourceBaseHref, sourceHtml]);
+  const reviewPrepared = useMemo(
+    () => reviewHtml ? prepareSlideDocument(reviewHtml, sourceBaseHref) : null,
+    [reviewHtml, sourceBaseHref]
+  );
   const visibleOverlays = useMemo(
     () => overlays.filter((overlay) => !overlay.hidden && (!currentSlideId || !overlay.slideId || overlay.slideId === currentSlideId)),
     [currentSlideId, overlays]
@@ -442,19 +456,19 @@ export function CanvasStage({
     visibleOverlays
   ]);
 
-  useEffect(() => {
-    const animationFrame = window.requestAnimationFrame(() => {
-      const document = iframeRef.current?.contentDocument;
-      const frame = frameRef.current;
-      if (!document || !frame) {
-        return;
-      }
+  const handleReviewFrameLoad = useCallback((requestId: number): void => {
+    const frame = reviewIframeRef.current;
+    const document = frame?.contentDocument;
+    if (!frame || !document || !reviewPrepared) {
+      return;
+    }
 
-      onReviewSnapshot(buildReviewSnapshot(document, frame, currentSlideId, prepared.slides, visibleOverlays, scale, sourceBaseHref));
-    });
+    const snapshots = reviewPrepared.slides.length > 0
+      ? captureDeckReviewSnapshots(document, frame, reviewPrepared.slides, sourceBaseHref)
+      : [buildReviewSnapshot(document, frame, null, [], [], 1, sourceBaseHref, true)];
 
-    return () => window.cancelAnimationFrame(animationFrame);
-  }, [currentSlideId, onReviewSnapshot, patches, prepared.slides, reviewRequestId, scale, selectedElements, sourceBaseHref, visibleOverlays]);
+    onReviewSnapshots(requestId, snapshots);
+  }, [onReviewSnapshots, reviewPrepared, sourceBaseHref]);
 
   const handleInputPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || isInlineEditing) {
@@ -1512,6 +1526,19 @@ export function CanvasStage({
           {marquee ? <div className="marquee-selection" style={toMarqueeStyle(marquee, scale)} /> : null}
         </div>
       </div>
+      {reviewPrepared && reviewRequestId > 0 ? (
+        <iframe
+          key={reviewRequestId}
+          ref={reviewIframeRef}
+          className="deck-review-frame"
+          title="全スライド確認"
+          aria-hidden="true"
+          tabIndex={-1}
+          sandbox="allow-same-origin"
+          srcDoc={reviewPrepared.html}
+          onLoad={() => handleReviewFrameLoad(reviewRequestId)}
+        />
+      ) : null}
     </main>
   );
 }
@@ -1819,11 +1846,17 @@ function buildReviewSnapshot(
   slides: SlideDescriptor[],
   visibleOverlays: Overlay[],
   scale: number,
-  sourceBaseUrl?: string
+  sourceBaseUrl?: string,
+  includeDocumentWideReferences = false
 ): ReviewSnapshot {
   const slide = slides.find((candidate) => candidate.id === currentSlideId) ?? slides[0] ?? null;
   const slideBounds = readCurrentSlideBounds(document, currentSlideId, slides);
   const slideRoot = slide ? document.querySelector(slide.selector) : document.body;
+
+  const targets = [
+    ...collectReviewDomTargets(document, slideRoot ?? document.body, slide?.id ?? null),
+    ...collectReviewOverlayTargets(frame, visibleOverlays, slide?.id ?? null, scale, sourceBaseUrl)
+  ];
 
   return {
     checkedAt: new Date().toISOString(),
@@ -1836,12 +1869,48 @@ function buildReviewSnapshot(
       width: slideBounds.width,
       height: slideBounds.height
     },
-    targets: [
-      ...collectReviewDomTargets(document, slideRoot ?? document.body, slide?.id ?? null),
-      ...collectReviewOverlayTargets(frame, visibleOverlays, slide?.id ?? null, scale, sourceBaseUrl)
-    ],
-    externalReferences: collectExternalReferences(document)
+    targets,
+    externalReferences: collectExternalReferences(document, slideRoot, targets, slide?.id ?? null, includeDocumentWideReferences)
   };
+}
+
+function captureDeckReviewSnapshots(
+  document: Document,
+  frame: HTMLElement,
+  slides: SlideDescriptor[],
+  sourceBaseUrl?: string
+): ReviewSnapshot[] {
+  const displayStates = new Map<HTMLElement, { value: string; priority: string }>();
+  for (const slide of slides) {
+    const node = document.querySelector(slide.selector);
+    if (node && node !== document.body && "style" in node) {
+      const element = node as HTMLElement;
+      displayStates.set(element, {
+        value: element.style.getPropertyValue("display"),
+        priority: element.style.getPropertyPriority("display")
+      });
+    }
+  }
+
+  try {
+    return slides.map((slide, index) => {
+      for (const candidate of slides) {
+        const node = document.querySelector(candidate.selector);
+        if (!node || node === document.body || !("style" in node)) continue;
+        const element = node as HTMLElement;
+        if (candidate.id === slide.id) restoreInlineDisplay(element, displayStates.get(element));
+        else element.style.setProperty("display", "none", "important");
+      }
+      return buildReviewSnapshot(document, frame, slide.id, slides, [], 1, sourceBaseUrl, index === 0);
+    });
+  } finally {
+    for (const [element, state] of displayStates) restoreInlineDisplay(element, state);
+  }
+}
+
+function restoreInlineDisplay(element: HTMLElement, state?: { value: string; priority: string }): void {
+  if (state?.value) element.style.setProperty("display", state.value, state.priority);
+  else element.style.removeProperty("display");
 }
 
 function collectReviewDomTargets(document: Document, root: Element | null, slideId: string | null): ReviewTarget[] {
@@ -1850,12 +1919,12 @@ function collectReviewDomTargets(document: Document, root: Element | null, slide
   }
 
   const candidates = Array.from(root.querySelectorAll("h1,h2,h3,h4,h5,h6,p,li,span,a,img,svg,table,td,th,div"))
-    .filter((element): element is HTMLElement | SVGElement => element instanceof HTMLElement || element instanceof SVGElement)
+    .filter(isReviewHtmlOrSvgElement)
     .filter((element) => isReviewElementVisible(element))
     .filter((element) => isMeaningfulReviewElement(element));
 
   const withoutContainers = candidates.filter((element) => {
-    if (element instanceof HTMLImageElement || element.tagName === "SVG") {
+    if (isReviewImageElement(element) || element.tagName === "SVG") {
       return true;
     }
 
@@ -1865,16 +1934,19 @@ function collectReviewDomTargets(document: Document, root: Element | null, slide
 
   return withoutContainers.map((element) => {
     const selected = readSelectedElement(element);
+    const overlayRoot = element.closest<HTMLElement>("[data-hss-overlay-id]");
+    const overlayId = overlayRoot?.dataset.hssOverlayId;
     const computed = document.defaultView?.getComputedStyle(element);
-    const image = element instanceof HTMLImageElement ? element : null;
+    const image = isReviewImageElement(element) ? element : null;
     const text = selected.textContent.trim();
 
     return {
-      id: selected.hssId,
-      source: "dom",
+      id: overlayId ?? selected.hssId,
+      source: overlayId ? "overlay" : "dom",
       type: image ? "image" : text ? "text" : hasVisibleBackground(element) ? "shape" : "unknown",
       label: labelReviewElement(element, text),
       tagName: selected.tagName,
+      selector: selected.selector,
       slideId,
       text,
       bounds: {
@@ -1924,7 +1996,7 @@ function collectReviewOverlayTargets(
       backgroundColor: overlay.style.backgroundColor,
       fontSize: readCssPx(overlay.style.fontSize),
       lineHeight: readCssPx(overlay.style.lineHeight),
-      textClipped: content ? content.scrollWidth > content.clientWidth + 2 || content.scrollHeight > content.clientHeight + 2 : false,
+      textClipped: content ? isTextClipped(content) : false,
       imageSource: overlay.type === "overlayImage" ? documentAssetUrl(sourceBaseUrl, overlay.src) : undefined,
       imageBroken: image ? image.complete && image.naturalWidth === 0 : undefined,
       locked: overlay.locked,
@@ -1933,28 +2005,118 @@ function collectReviewOverlayTargets(
   });
 }
 
-function collectExternalReferences(document: Document): ReviewExternalReference[] {
+function collectExternalReferences(
+  document: Document,
+  root: Element | null,
+  targets: ReviewTarget[],
+  slideId: string | null,
+  includeDocumentWide: boolean
+): ReviewExternalReference[] {
   const references: ReviewExternalReference[] = [];
 
-  document.querySelectorAll("[src]").forEach((element) => {
-    const value = element.getAttribute("src");
-    if (value && isExternalReference(value)) {
-      references.push({ kind: "src", value, label: element.tagName.toLowerCase() });
+  const roots = [root, includeDocumentWide ? document.head : null].filter((candidate): candidate is Element => Boolean(candidate));
+  for (const scanRoot of roots) {
+    const elements = [scanRoot, ...Array.from(scanRoot.querySelectorAll("*"))];
+    for (const element of elements) {
+      for (const attribute of Array.from(element.attributes)) {
+        const name = attribute.name.toLowerCase();
+        const source: ReviewReferenceSource | null = REVIEW_URL_ATTRIBUTES.has(name)
+          ? "attribute"
+          : name === "srcset" || name === "imagesrcset"
+            ? "srcset"
+            : REVIEW_CSS_URL_ATTRIBUTES.has(name)
+              ? "css"
+              : null;
+        if (!source) continue;
+        for (const value of extractExternalReferenceValues(source, attribute.value)) {
+          references.push(reviewExternalReference(element, targets, slideId, source, value, name, scanRoot === root ? root : null));
+        }
+      }
+      if (element.tagName.toLowerCase() === "style") {
+        for (const value of extractExternalReferenceValues("css", element.textContent ?? "")) {
+          references.push(reviewExternalReference(element, targets, slideId, "css", value, undefined, scanRoot === root ? root : null));
+        }
+      }
     }
-  });
-
-  document.querySelectorAll("[href]").forEach((element) => {
-    const value = element.getAttribute("href");
-    if (value && isExternalReference(value)) {
-      references.push({ kind: "href", value, label: element.tagName.toLowerCase() });
-    }
-  });
+  }
 
   return references;
 }
 
-function isExternalReference(value: string): boolean {
-  return /^https?:\/\//i.test(value);
+function reviewExternalReference(
+  element: Element,
+  targets: ReviewTarget[],
+  slideId: string | null,
+  kind: ReviewReferenceSource,
+  value: string,
+  attributeName: string | undefined,
+  slideRoot: Element | null
+): ReviewExternalReference {
+  const sourceElement = slideRoot ? findReferenceTargetElement(element, slideRoot) : null;
+  const ancestorTargetId = sourceElement?.parentElement?.closest("[data-hss-id]")?.getAttribute("data-hss-id") ?? null;
+  const selected = sourceElement ? readSelectedElement(sourceElement) : null;
+  let target = selected
+    ? targets.find((candidate) =>
+        candidate.id === selected.hssId ||
+        candidate.selector === selected.selector ||
+        candidate.id === ancestorTargetId
+      )
+    : null;
+  if (!target && sourceElement && selected) {
+    target = buildReferenceReviewTarget(sourceElement, selected, slideId);
+    targets.push(target);
+  }
+  return {
+    kind,
+    value,
+    label: element.tagName.toLowerCase(),
+    attributeName,
+    slideId: target ? slideId ?? undefined : undefined,
+    targetId: target?.id,
+    targetLabel: target?.label,
+    targetSource: target?.source
+  };
+}
+
+function findReferenceTargetElement(element: Element, slideRoot: Element): Element {
+  let candidate: Element | null = element;
+  while (candidate && slideRoot.contains(candidate)) {
+    if (isReviewElementVisible(candidate)) return candidate;
+    if (candidate === slideRoot) break;
+    candidate = candidate.parentElement;
+  }
+  return slideRoot;
+}
+
+function buildReferenceReviewTarget(element: Element, selected: SelectedElement, slideId: string | null): ReviewTarget {
+  const computed = element.ownerDocument.defaultView?.getComputedStyle(element);
+  const image = isReviewImageElement(element) ? element : null;
+  const text = selected.textContent.trim();
+  const overlayRoot = element.closest<HTMLElement>("[data-hss-overlay-id]");
+  const overlayId = overlayRoot?.dataset.hssOverlayId;
+  return {
+    id: overlayId ?? selected.hssId,
+    source: overlayId ? "overlay" : "dom",
+    type: image ? "image" : text ? "text" : hasVisibleBackground(element) ? "shape" : "unknown",
+    label: labelReviewElement(element, text) || element.tagName.toLowerCase(),
+    tagName: selected.tagName,
+    selector: selected.selector,
+    slideId,
+    text,
+    bounds: {
+      x: selected.bbox.x,
+      y: selected.bbox.y,
+      width: selected.bbox.width,
+      height: selected.bbox.height
+    },
+    color: computed?.color,
+    backgroundColor: resolveEffectiveBackground(element),
+    fontSize: readCssPx(computed?.fontSize),
+    lineHeight: readCssPx(computed?.lineHeight),
+    textClipped: text ? isTextClipped(element) : false,
+    imageSource: image?.currentSrc || image?.getAttribute("src") || undefined,
+    imageBroken: image ? image.complete && image.naturalWidth === 0 : undefined
+  };
 }
 
 function isReviewElementVisible(element: Element): boolean {
@@ -1970,7 +2132,7 @@ function isReviewElementVisible(element: Element): boolean {
 }
 
 function isMeaningfulReviewElement(element: Element): boolean {
-  if (element instanceof HTMLImageElement || element.tagName === "SVG") {
+  if (isReviewImageElement(element) || element.tagName === "SVG") {
     return true;
   }
 
@@ -2018,11 +2180,38 @@ function readCssPx(value: string | undefined): number | undefined {
 }
 
 function isTextClipped(element: Element): boolean {
-  if (!(element instanceof HTMLElement)) {
+  if (!isReviewHtmlElement(element)) {
     return false;
   }
 
-  return element.scrollWidth > element.clientWidth + 2 || element.scrollHeight > element.clientHeight + 2;
+  const computed = element.ownerDocument.defaultView?.getComputedStyle(element);
+  if (!computed) {
+    return false;
+  }
+
+  return isClippedTextOverflow({
+    overflowX: computed.overflowX,
+    overflowY: computed.overflowY,
+    clientWidth: element.clientWidth,
+    clientHeight: element.clientHeight,
+    scrollWidth: element.scrollWidth,
+    scrollHeight: element.scrollHeight
+  });
+}
+
+function isReviewHtmlOrSvgElement(element: Element): element is HTMLElement | SVGElement {
+  const view = element.ownerDocument.defaultView;
+  return Boolean(view && (element instanceof view.HTMLElement || element instanceof view.SVGElement));
+}
+
+function isReviewHtmlElement(element: Element): element is HTMLElement {
+  const view = element.ownerDocument.defaultView;
+  return Boolean(view && element instanceof view.HTMLElement);
+}
+
+function isReviewImageElement(element: Element): element is HTMLImageElement {
+  const view = element.ownerDocument.defaultView;
+  return Boolean(view && element instanceof view.HTMLImageElement);
 }
 
 function snapCanvasInteraction(

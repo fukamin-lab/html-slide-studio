@@ -18,7 +18,7 @@ body:
     id: windows
     attributes:
       label: Windowsと端末
-      placeholder: 例：Windows 11 24H2 / Snapdragon X Elite
+      placeholder: 例：Windows 11 24H2 / ARM64 Snapdragon X Elite、またはWindows 10 22H2 / x64 Intel Core i5
     validations:
       required: true
   - type: textarea
