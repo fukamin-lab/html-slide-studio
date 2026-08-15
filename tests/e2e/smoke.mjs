@@ -12,12 +12,14 @@ const fixturePath = resolve("tests/fixtures/workflow-slide.html");
 const revealFixturePath = resolve("tests/fixtures/reveal-nested.html");
 const unsupportedFixturePath = resolve("tests/fixtures/unsupported-body-sections.html");
 const mixedFixturePath = resolve("tests/fixtures/mixed-data-slide.html");
+const securityFixturePath = resolve("tests/fixtures/security-boundaries.html");
 
 const tempRoot = await mkdtemp(join(tmpdir(), "hss-legacy-e2e-"));
 const htmlPath = join(tempRoot, "workflow.html");
 const revealPath = join(tempRoot, "reveal-nested.html");
 const unsupportedPath = join(tempRoot, "unsupported-body-sections.html");
 const mixedPath = join(tempRoot, "mixed-data-slide.html");
+const securityPath = join(tempRoot, "security-boundaries.html");
 const artifactsPath = join(tempRoot, "artifacts");
 const reopenedPresenterSnapshotPath = join(tempRoot, "reopened-presenter-snapshot.json");
 await mkdir(artifactsPath);
@@ -25,6 +27,7 @@ await copyFile(fixturePath, htmlPath);
 await copyFile(revealFixturePath, revealPath);
 await copyFile(unsupportedFixturePath, unsupportedPath);
 await copyFile(mixedFixturePath, mixedPath);
+await copyFile(securityFixturePath, securityPath);
 
 let session = null;
 let presenterNotesRoundTrip = false;
@@ -556,6 +559,28 @@ try {
   assert.match(mixed.reason ?? "", /安全に判定できない/);
 
   await shutdown(session);
+  session = await launch("security", securityPath);
+  await waitForEval(session.cdp, "document.querySelectorAll('.slide-list__item').length === 1", 30_000);
+  const securityBoundaries = await evaluate(session.cdp, `(() => {
+    const root = document.querySelector('iframe.slide-frame')?.contentDocument;
+    if (!root) return null;
+    return {
+      headingText: root.querySelector('#security-title')?.textContent,
+      injectedNode: Boolean(root.querySelector('#attribute-injection')),
+      javascriptHref: root.querySelector('#javascript-link')?.hasAttribute('href'),
+      dataSource: root.querySelector('#data-image')?.hasAttribute('src'),
+      embeddedHtml: root.querySelector('#embedded-html')?.hasAttribute('srcdoc')
+    };
+  })()`);
+  assert.deepEqual(securityBoundaries, {
+    headingText: "安全な見出し",
+    injectedNode: false,
+    javascriptHref: false,
+    dataSource: false,
+    embeddedHtml: false
+  });
+
+  await shutdown(session);
   session = null;
   const presenterEvidence = execFileSync(process.execPath, [resolve("tests/e2e/presenter.mjs"), reopenedPresenterSnapshotPath], {
     cwd: repoRoot,
@@ -564,7 +589,7 @@ try {
   });
   assert.match(presenterEvidence, /"reopenedSaveChain": true/);
 
-  console.log(JSON.stringify({ pass: true, slides: 4, deckWideReview: true, overwrite: true, reopen: true, presenterNotesRoundTrip, presenterDrawingSynced, reopenedNotesInPresenter: true, nestedReveal: true, duplicateReferencesRemapped: true, unsupportedMutationDisabled: true, mixedTagMutationDisabled: true, screenshotCaptured: true }, null, 2));
+  console.log(JSON.stringify({ pass: true, slides: 4, deckWideReview: true, overwrite: true, reopen: true, presenterNotesRoundTrip, presenterDrawingSynced, reopenedNotesInPresenter: true, nestedReveal: true, duplicateReferencesRemapped: true, unsupportedMutationDisabled: true, mixedTagMutationDisabled: true, maliciousRuntimeMarkerIgnored: true, unsafeUrlsRemoved: true, screenshotCaptured: true }, null, 2));
 } catch (error) {
   if (session?.cdp) {
     try {

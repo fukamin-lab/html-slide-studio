@@ -19,6 +19,8 @@ AIで作った静的HTMLスライドを、手元で仕上げて、そのまま�
 
 Unsupported or limited decks must be reported before editing. The app must not claim parity between its sanitized preview and a script-dependent browser rendering.
 
+The sanitized preview and Presenter document remove scripts, inline event handlers, `javascript:` / `vbscript:` / `data:` / `blob:` URL attributes, and `srcdoc`. Patch rollback data is retained only as in-process cloned DOM state, never read back from source-controlled HTML attributes.
+
 ## Save transaction
 
 ```text

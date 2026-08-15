@@ -32,6 +32,18 @@ npm run verify:package:x64
 
 CIはARM64とx64を別runnerで実行します。一方だけの成功をWindows全体の合格とは扱いません。
 
+## 公開Pull Requestの取込み
+
+公開repoと保守用正本はcommit履歴を共有しないため、公開repoだけへ変更をmergeして次のexportで失わないよう、次の順序を守ります。
+
+1. 公開Pull Requestのpatchを保守用正本へ適用し、必要なtestと文書を揃える。
+2. 保守用正本で`npm run public:source:check`を実行し、公開候補を生成する。
+3. 公開Pull Requestのmerge候補と公開候補を比較し、意図した変更以外の差分と内部情報がないことを確認する。
+4. ARM64／x64 CIが成功してから公開Pull Requestをmergeする。
+5. merge後の公開`main`を新しいdirectoryへcloneし、`npm run public:source:check`と公開候補との一致を再確認する。
+
+公開側で直接作られたcommitも、この取込みを終えるまで正式な保守正本として扱いません。Contributorへ非公開fileや保守用pathを要求しません。
+
 ## 依存更新
 
 - `package-lock.json`を正とし、Releaseは`npm ci`から再現する。

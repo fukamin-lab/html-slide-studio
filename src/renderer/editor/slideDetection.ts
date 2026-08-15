@@ -1,5 +1,6 @@
 import type { SlideDescriptor } from "../types/project";
 import { detectSlidesForPreview } from "./slideStructure";
+import { isUnsafeSlideUrl } from "./slideUrlPolicy";
 
 export type PreparedSlideDocument = {
   html: string;
@@ -93,19 +94,36 @@ function removeExecutableContent(doc: Document, warnings: string[]): void {
   doc.querySelectorAll("*").forEach((element) => {
     for (const attribute of Array.from(element.attributes)) {
       const name = attribute.name.toLowerCase();
-      const value = attribute.value.trim().toLowerCase();
 
       if (name.startsWith("on")) {
         element.removeAttribute(attribute.name);
         warnings.push(`Removed inline event handler ${attribute.name} while loading the slide safely.`);
+        continue;
       }
 
-      if ((name === "href" || name === "src" || name === "xlink:href") && value.startsWith("javascript:")) {
+      if (name === "srcdoc") {
         element.removeAttribute(attribute.name);
-        warnings.push(`Removed javascript: URL from ${element.tagName.toLowerCase()} while loading the slide safely.`);
+        warnings.push(`Removed embedded HTML from ${element.tagName.toLowerCase()} while loading the slide safely.`);
+        continue;
+      }
+
+      if (isUrlAttribute(name) && isUnsafeSlideUrl(attribute.value)) {
+        element.removeAttribute(attribute.name);
+        warnings.push(`Removed unsafe URL from ${element.tagName.toLowerCase()} while loading the slide safely.`);
       }
     }
   });
+}
+
+function isUrlAttribute(name: string): boolean {
+  return name === "href"
+    || name === "src"
+    || name === "xlink:href"
+    || name === "action"
+    || name === "formaction"
+    || name === "poster"
+    || name === "background"
+    || name === "data";
 }
 
 function ensureDocumentBasics(doc: Document): void {

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>Security boundaries</title>
+  <style>
+    .slide { width: 1366px; height: 768px; padding: 80px; }
+  </style>
+</head>
+<body>
+  <section class="slide" data-label="安全境界">
+    <h1 id="security-title" data-hss-original-text="&lt;span id='attribute-injection'&gt;注入された内容&lt;/span&gt;">安全な見出し</h1>
+    <a id="javascript-link" href="java&#10;script:alert(1)">危険なリンク</a>
+    <img id="data-image" src="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg'&gt;&lt;script&gt;alert(1)&lt;/script&gt;&lt;/svg&gt;" alt="危険な画像">
+    <iframe id="embedded-html" srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;"></iframe>
+  </section>
+</body>
+</html>
