@@ -1,12 +1,12 @@
 {
   "schemaVersion": 3,
-  "capturedAt": "2026-08-15T15:35:11.239Z",
+  "capturedAt": "2026-08-15T16:37:03.085Z",
   "displayMode": "multi-display",
   "presenterCapture": "physical-multi-display",
   "source": {
-    "gitCommit": "e447069d34a5d0f0b93cae7570c4b7b271563942",
+    "gitCommit": "73b7286ac0f66e10d9f9794022a7af88e48f8bff",
     "gitDirty": false,
-    "appVersion": "0.2.0",
+    "appVersion": "0.2.1",
     "electronVersion": "42.9.1",
     "command": "npm run build && node scripts/capture-user-guide.mjs",
     "platform": "win32",
@@ -25,11 +25,11 @@
   "sha256": {
     "01-start.png": "9f5b7e4566de5b54ed679c682b2b54733f5e45617693dafbeddeff7bbbc43cc5",
     "02-editor.png": "fdeab7650d26db8b0a85a2a9e58f61762ce572b05eb596082bd7591032f9146c",
-    "03-slide-operations.png": "86e4485e43e7810b8253d58c645fe7286aec31dacb8828086477cbf2657276b4",
-    "04-text-edit.png": "9d79cb7fa4db36172fe2cc2e922335b77fb4814ecf713928c75bc5cf5c309b48",
-    "05-check.png": "c70158c8116bb6e9c21d7c482078a9d435c2cb652f358f0d95f0b5521ea53f39",
-    "06-save-complete.png": "0581d5ff2ed4c0f4ffc32ebcc0f5b1d2941962956276a4c2561309a4f9d42f06",
+    "03-slide-operations.png": "972171200adb4f3ebf3a68dbef3d6c2f6c33429fa21ebfe12a566e731a4f97c0",
+    "04-text-edit.png": "c3831b5ad5e34cf4d3e0ee755eaa99bea2bd90d23d4311e8aa07f2526cb9817e",
+    "05-check.png": "6e44dba8fc247c59620aa734d8eedd5ee5b36536435bee6fcf4ef021981fb003",
+    "06-save-complete.png": "1996e20f3e32df8a7faa398861d5f7c984785119e3f54fe0a715a5c1fe8f9072",
     "07-audience-mode.png": "edd8e9032baaab120e904077c14a31b0bc9f2a16da57135058e253d11ad463e9",
-    "08-presenter-window.png": "2c34d3c9aabc71d74317dd0fc0d5911dd97aef916254777c5ab41b3eb0d8c1dd"
+    "08-presenter-window.png": "1a88905c7eee745ac46d8126885d6de2bbdb8d9298b3a6c8c0f2446eb92ee16b"
   }
 }
