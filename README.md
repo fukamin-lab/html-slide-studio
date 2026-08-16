@@ -29,7 +29,7 @@ AIで作った静的HTMLスライドを、Windows上で最後に直し、その�
 
 ## まず試す
 
-1. [Releases](https://github.com/fukamin-lab/html-slide-studio/releases)から、PCに合う `HTML Slide Studio Setup <version>-arm64.exe` または `HTML Slide Studio Setup <version>-x64.exe` をダウンロードします。
+1. [Releases](https://github.com/fukamin-lab/html-slide-studio/releases)から、PCに合う `HTML.Slide.Studio.Setup.<version>-arm64.exe` または `HTML.Slide.Studio.Setup.<version>-x64.exe` をダウンロードします。
 2. インストーラーを実行し、デスクトップまたはスタートメニューのショートカットから起動します。
 3. 起動トップページの `デモを開く` を選びます。
 4. 文字の変更、スライドの複製、ノート、保存、発表を順に試します。
@@ -37,7 +37,7 @@ AIで作った静的HTMLスライドを、Windows上で最後に直し、その�
 同梱デモはアプリのデータ領域へ作る編集用コピーです。自由に上書きしても、EXE内の原本は変わりません。
 
 > [!WARNING]
-> 対応環境は **Windows 10以降の64-bit ARM64／x64** です。Snapdragon搭載PCはARM64版、Intel／AMD搭載PCはx64版を選んでください。x64版はARM64上のWindows emulationまで確認済みで、native x64実機では未確認の暫定版です。コード署名をしていないため、初回起動時にWindowsの警告が表示される場合があります。警告を回避する目的でセキュリティ機能を無効化しないでください。配布元とSHA-256を確認してから実行してください。
+> 対応環境は **Windows 10以降の64-bit ARM64／x64** です。Snapdragon搭載PCはARM64版、Intel／AMD搭載PCはx64版を選んでください。v0.2.1はWindows 11のARM64／native x64物理端末で、installer、shortcut、起動、同梱デモを受入確認済みです。コード署名をしていないため、初回起動時にWindowsの警告が表示される場合があります。警告を回避する目的でセキュリティ機能を無効化しないでください。配布元とSHA-256を確認してから実行してください。
 
 詳しい対応状況と実機確認範囲は[対応環境](docs/SUPPORT_MATRIX.md)を参照してください。
 
