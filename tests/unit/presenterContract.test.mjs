@@ -38,12 +38,14 @@ test("Presenter command guard accepts navigation, notes, and bounded drawing com
   assert.equal(isPresenterCommand({ type: "finish-notes", slideId: "slide-1" }), true);
   assert.equal(isPresenterCommand({ type: "clear-drawing", slideId: "slide-1" }), true);
   assert.equal(isPresenterCommand({ type: "draw", event: { slideId: "slide-1", tool: "laser", color: "#ef4444", phase: "start", strokeId: "stroke-1", x: 683, y: 384 } }), true);
+  assert.equal(isPresenterCommand({ type: "draw", event: { slideId: "slide-1", tool: "pen", color: "#2563eb", phase: "move", strokeId: "stroke-2", x: 1600, y: 900 } }), true);
   assert.equal(isPresenterCommand({ type: "unknown" }), false);
   assert.equal(isPresenterCommand({ type: "next-slide", extra: true }), false);
   assert.equal(isPresenterCommand({ type: "set-slide", slideId: "" }), false);
   assert.equal(isPresenterCommand({ type: "draw", event: { slideId: "slide-1", tool: "laser", color: "#ef4444", phase: "move", strokeId: "stroke-1", x: -1, y: 10 } }), false);
   assert.equal(isPresenterCommand({ type: "draw", event: { slideId: "slide-1", tool: "brush", color: "#ef4444", phase: "move", strokeId: "stroke-1", x: 10, y: 10 } }), false);
   assert.equal(isPresenterCommand({ type: "draw", event: { slideId: "slide-1", tool: "laser", color: "hotpink", phase: "move", strokeId: "stroke-1", x: 10, y: 10 } }), false);
+  assert.equal(isPresenterCommand({ type: "draw", event: { slideId: "slide-1", tool: "laser", color: "#ef4444", phase: "move", strokeId: "stroke-1", x: 16_385, y: 10 } }), false);
   assert.equal(isPresenterCommand({ type: "update-notes", slideId: "slide-1", notes: "ok", extra: true }), false);
 });
 

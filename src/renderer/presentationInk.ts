@@ -1,7 +1,5 @@
 import type { PresentationColor, PresentationDrawEvent } from "./types/presenter";
 
-export const PRESENTATION_FRAME_WIDTH = 1366;
-export const PRESENTATION_FRAME_HEIGHT = 768;
 export const LASER_LIFETIME_MS = 1800;
 export const DEFAULT_PRESENTATION_COLOR: PresentationColor = "#ef4444";
 export const PRESENTATION_COLOR_OPTIONS: ReadonlyArray<{ color: PresentationColor; label: string }> = [

@@ -23,6 +23,12 @@ import {
   type ReviewReferenceSource
 } from "../editor/reviewReferences";
 import { prepareSlideDocument } from "../editor/slideDetection";
+import {
+  DEFAULT_SLIDE_FRAME_SIZE,
+  readSlideFrameSize,
+  sameSlideFrameSize,
+  type SlideFrameSize
+} from "../editor/slideFrame";
 import { isClippedTextOverflow } from "../editor/textOverflow";
 import { formatTranslate, parseTranslate } from "../editor/transform";
 import { useI18n } from "../i18n";
@@ -31,8 +37,8 @@ import type { SlideDescriptor } from "../types/project";
 import type { ReviewExternalReference, ReviewSnapshot, ReviewTarget } from "../types/review";
 import type { DomMoveChange, DomResizeChange, OverlayMoveChange, OverlayResizeChange, SelectedElement } from "../types/selection";
 
-const FRAME_WIDTH = 1366;
-const FRAME_HEIGHT = 768;
+const DEFAULT_FRAME_WIDTH = DEFAULT_SLIDE_FRAME_SIZE.width;
+const DEFAULT_FRAME_HEIGHT = DEFAULT_SLIDE_FRAME_SIZE.height;
 const RESIZE_HANDLES: ResizeHandle[] = ["nw", "ne", "sw", "se"];
 const TEXT_MOVE_EDGES = ["top", "right", "bottom", "left"] as const;
 const SNAP_THRESHOLD = 6;
@@ -153,6 +159,7 @@ export function CanvasStage({
   const [pointerSelection, setPointerSelection] = useState<PointerSelection | null>(null);
   const [isInlineEditing, setIsInlineEditing] = useState(false);
   const [editingOverlay, setEditingOverlay] = useState<{ id: string; originalText: string } | null>(null);
+  const [frameSize, setFrameSize] = useState<SlideFrameSize>(() => ({ ...DEFAULT_SLIDE_FRAME_SIZE }));
   const inlineEditingRef = useRef(false);
   const setInlineEditing = useCallback((value: boolean): void => {
     inlineEditingRef.current = value;
@@ -197,8 +204,8 @@ export function CanvasStage({
     [patches, selectedElements, selectedOverlayIds, visibleOverlays]
   );
   const miniPaletteStyle = useMemo(
-    () => miniPaletteBox ? toMiniPaletteStyle(miniPaletteBox, scale) : undefined,
-    [miniPaletteBox, scale]
+    () => miniPaletteBox ? toMiniPaletteStyle(miniPaletteBox, scale, frameSize) : undefined,
+    [frameSize, miniPaletteBox, scale]
   );
   const miniPaletteActiveStyle = selectedElement?.computedStyle ?? activeOverlay?.style;
 
@@ -223,14 +230,14 @@ export function CanvasStage({
       const verticalPadding = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
       const availableWidth = Math.max(1, rect.width - horizontalPadding);
       const availableHeight = Math.max(1, rect.height - verticalPadding);
-      onFitScaleChange(clampZoom(Math.min(availableWidth / FRAME_WIDTH, availableHeight / FRAME_HEIGHT)));
+      onFitScaleChange(clampZoom(Math.min(availableWidth / frameSize.width, availableHeight / frameSize.height)));
     };
 
     updateScale();
     const observer = new ResizeObserver(updateScale);
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, [onFitScaleChange]);
+  }, [frameSize.height, frameSize.width, onFitScaleChange]);
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent): void => {
@@ -278,6 +285,8 @@ export function CanvasStage({
 
     const warnings = applyPatchesToDocument(document, patches);
     applySlideVisibility(document, currentSlideId, prepared.slides);
+    const nextFrameSize = readSlideFrameSize(document, currentSlideId, prepared.slides);
+    setFrameSize((current) => sameSlideFrameSize(current, nextFrameSize) ? current : nextFrameSize);
     onSlideBounds(readCurrentSlideBounds(document, currentSlideId, prepared.slides));
     onRuntimeWarnings(warnings);
 
@@ -1306,8 +1315,8 @@ export function CanvasStage({
           className="canvas-frame"
           onWheel={handleCanvasWheel}
           style={{
-            width: FRAME_WIDTH * scale,
-            height: FRAME_HEIGHT * scale
+            width: frameSize.width * scale,
+            height: frameSize.height * scale
           }}
         >
           <iframe
@@ -1318,8 +1327,8 @@ export function CanvasStage({
             srcDoc={prepared.html}
             onLoad={attachEditorListeners}
             style={{
-              width: FRAME_WIDTH,
-              height: FRAME_HEIGHT,
+              width: frameSize.width,
+              height: frameSize.height,
               transform: `scale(${scale})`
             }}
           />
@@ -1537,6 +1546,7 @@ export function CanvasStage({
           sandbox="allow-same-origin"
           srcDoc={reviewPrepared.html}
           onLoad={() => handleReviewFrameLoad(reviewRequestId)}
+          style={{ width: frameSize.width, height: frameSize.height }}
         />
       ) : null}
     </main>
@@ -2565,11 +2575,11 @@ function unionBoxes(boxes: SnapBox[]): SnapBox {
   };
 }
 
-function toMiniPaletteStyle(box: SnapBox, scale: number): CSSProperties {
+function toMiniPaletteStyle(box: SnapBox, scale: number, frameSize: SlideFrameSize): CSSProperties {
   const paletteWidth = 286;
   const paletteHeight = 36;
-  const frameWidth = FRAME_WIDTH * scale;
-  const frameHeight = FRAME_HEIGHT * scale;
+  const frameWidth = frameSize.width * scale;
+  const frameHeight = frameSize.height * scale;
   const rightSideLeft = box.right * scale + 8;
   const leftSideLeft = box.left * scale - paletteWidth - 8;
   const centeredLeft = (box.left + box.width / 2) * scale - paletteWidth / 2;
@@ -2601,10 +2611,10 @@ function defaultFrameBounds(): SlideBounds {
   return {
     left: 0,
     top: 0,
-    right: FRAME_WIDTH,
-    bottom: FRAME_HEIGHT,
-    width: FRAME_WIDTH,
-    height: FRAME_HEIGHT
+    right: DEFAULT_FRAME_WIDTH,
+    bottom: DEFAULT_FRAME_HEIGHT,
+    width: DEFAULT_FRAME_WIDTH,
+    height: DEFAULT_FRAME_HEIGHT
   };
 }
 

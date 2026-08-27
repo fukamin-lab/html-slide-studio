@@ -4,19 +4,20 @@ import { documentAssetUrl } from "../editor/assetUrl";
 import { applyPatchesToDocument, applySlideVisibility } from "../editor/patchEngine";
 import { prepareSlideDocument } from "../editor/slideDetection";
 import {
+  DEFAULT_SLIDE_FRAME_SIZE,
+  readSlideFrameSize,
+  sameSlideFrameSize,
+  type SlideFrameSize
+} from "../editor/slideFrame";
+import {
   DEFAULT_PRESENTATION_COLOR,
   laserOpacity,
-  PRESENTATION_FRAME_HEIGHT,
-  PRESENTATION_FRAME_WIDTH,
   visiblePresentationStrokes,
   type PresentationInkState,
   type PresentationInkStroke
 } from "../presentationInk";
 import type { Overlay, Patch } from "../types/patches";
 import type { PresentationColor, PresentationDrawEvent, PresentationTool } from "../types/presenter";
-
-const FRAME_WIDTH = PRESENTATION_FRAME_WIDTH;
-const FRAME_HEIGHT = PRESENTATION_FRAME_HEIGHT;
 
 type SlidePreviewFrameProps = {
   sourceHtml: string;
@@ -56,6 +57,7 @@ export function SlidePreviewFrame({
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(1);
+  const [frameSize, setFrameSize] = useState<SlideFrameSize>(() => ({ ...DEFAULT_SLIDE_FRAME_SIZE }));
   const [inkNow, setInkNow] = useState(() => Date.now());
   const activeStrokeRef = useRef<{
     pointerId: number;
@@ -91,14 +93,14 @@ export function SlidePreviewFrame({
 
     const updateScale = (): void => {
       const rect = viewport.getBoundingClientRect();
-      setScale(Math.min(rect.width / FRAME_WIDTH, rect.height / FRAME_HEIGHT));
+      setScale(Math.min(rect.width / frameSize.width, rect.height / frameSize.height));
     };
 
     updateScale();
     const observer = new ResizeObserver(updateScale);
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, []);
+  }, [frameSize.height, frameSize.width]);
 
   const applyRuntimeState = useCallback(() => {
     const document = iframeRef.current?.contentDocument;
@@ -108,6 +110,8 @@ export function SlidePreviewFrame({
 
     applyPatchesToDocument(document, patches);
     applySlideVisibility(document, effectiveSlideId, prepared.slides);
+    const nextFrameSize = readSlideFrameSize(document, effectiveSlideId, prepared.slides);
+    setFrameSize((current) => sameSlideFrameSize(current, nextFrameSize) ? current : nextFrameSize);
   }, [effectiveSlideId, patches, prepared.slides]);
 
   const emitPresentationDraw = useCallback((event: ReactPointerEvent<HTMLDivElement>, phase: PresentationDrawEvent["phase"]): void => {
@@ -116,8 +120,8 @@ export function SlidePreviewFrame({
     if (phase !== "start" && (!active || active.pointerId !== event.pointerId)) return;
 
     const rect = event.currentTarget.getBoundingClientRect();
-    const x = clamp(((event.clientX - rect.left) / Math.max(1, rect.width)) * FRAME_WIDTH, 0, FRAME_WIDTH);
-    const y = clamp(((event.clientY - rect.top) / Math.max(1, rect.height)) * FRAME_HEIGHT, 0, FRAME_HEIGHT);
+    const x = clamp(((event.clientX - rect.left) / Math.max(1, rect.width)) * frameSize.width, 0, frameSize.width);
+    const y = clamp(((event.clientY - rect.top) / Math.max(1, rect.height)) * frameSize.height, 0, frameSize.height);
     const strokeId = phase === "start" ? createStrokeId() : active?.strokeId;
     if (!strokeId) return;
 
@@ -153,7 +157,7 @@ export function SlidePreviewFrame({
       activeStrokeRef.current = null;
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     }
-  }, [effectiveSlideId, onPresentationDraw, presentationColor, presentationTool]);
+  }, [effectiveSlideId, frameSize.height, frameSize.width, onPresentationDraw, presentationColor, presentationTool]);
 
   const finishInterruptedDraw = useCallback((event: ReactPointerEvent<HTMLDivElement>): void => {
     const active = activeStrokeRef.current;
@@ -182,8 +186,8 @@ export function SlidePreviewFrame({
         <div
           className="slide-preview__frame"
           style={{
-            width: FRAME_WIDTH * scale,
-            height: FRAME_HEIGHT * scale
+            width: frameSize.width * scale,
+            height: frameSize.height * scale
           }}
         >
           <iframe
@@ -194,8 +198,8 @@ export function SlidePreviewFrame({
             srcDoc={prepared.html}
             onLoad={applyRuntimeState}
             style={{
-              width: FRAME_WIDTH,
-              height: FRAME_HEIGHT,
+              width: frameSize.width,
+              height: frameSize.height,
               transform: `scale(${scale})`
             }}
           />
@@ -233,7 +237,7 @@ export function SlidePreviewFrame({
               }}
               onLostPointerCapture={finishInterruptedDraw}
             >
-              {visibleInk.length > 0 ? <PresentationInkSvg strokes={visibleInk} now={inkNow} /> : null}
+              {visibleInk.length > 0 ? <PresentationInkSvg strokes={visibleInk} now={inkNow} frameSize={frameSize} /> : null}
               {interactionLayer}
             </div>
           ) : null}
@@ -270,9 +274,17 @@ function toOverlayStyle(overlay: Overlay, scale: number): CSSProperties {
   };
 }
 
-function PresentationInkSvg({ strokes, now }: { strokes: PresentationInkStroke[]; now: number }): JSX.Element {
+function PresentationInkSvg({
+  strokes,
+  now,
+  frameSize
+}: {
+  strokes: PresentationInkStroke[];
+  now: number;
+  frameSize: SlideFrameSize;
+}): JSX.Element {
   return (
-    <svg className="presentation-ink" viewBox={`0 0 ${FRAME_WIDTH} ${FRAME_HEIGHT}`} aria-hidden="true">
+    <svg className="presentation-ink" viewBox={`0 0 ${frameSize.width} ${frameSize.height}`} aria-hidden="true">
       {strokes.map((stroke) => {
         const opacity = laserOpacity(stroke, now);
         const className = `presentation-ink__stroke presentation-ink__stroke--${stroke.tool}`;

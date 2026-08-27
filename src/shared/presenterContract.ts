@@ -1,6 +1,7 @@
 import type { PatchManifest } from "../renderer/types/patches";
 import type { PresenterCommand, PresenterSnapshot } from "../renderer/types/presenter";
 import type { SlideDescriptor } from "../renderer/types/project";
+import { MAX_SLIDE_FRAME_DIMENSION } from "./slideFrameContract.ts";
 
 const MAX_SOURCE_LENGTH = 64 * 1024 * 1024;
 const MAX_SLIDES = 2_000;
@@ -35,8 +36,8 @@ function isPresentationDrawEvent(value: unknown): boolean {
     (value.color === "#ef4444" || value.color === "#facc15" || value.color === "#2563eb" || value.color === "#111827" || value.color === "#ffffff") &&
     (value.phase === "start" || value.phase === "move" || value.phase === "end") &&
     isBoundedString(value.strokeId, 1, 128) &&
-    isFiniteRange(value.x, 0, 1366) &&
-    isFiniteRange(value.y, 0, 768);
+    isFiniteRange(value.x, 0, MAX_SLIDE_FRAME_DIMENSION) &&
+    isFiniteRange(value.y, 0, MAX_SLIDE_FRAME_DIMENSION);
 }
 
 export function isPresenterSnapshot(value: unknown): value is PresenterSnapshot {
@@ -76,7 +77,7 @@ function isSlideDescriptor(value: unknown): value is SlideDescriptor {
     if (value[key] !== undefined && !isBoundedString(value[key], 0, 8_192)) return false;
   }
   for (const key of ["width", "height"] as const) {
-    if (value[key] !== undefined && (!Number.isFinite(value[key]) || Number(value[key]) < 0)) return false;
+    if (value[key] !== undefined && (!Number.isFinite(value[key]) || Number(value[key]) < 0 || Number(value[key]) > MAX_SLIDE_FRAME_DIMENSION)) return false;
   }
   return true;
 }

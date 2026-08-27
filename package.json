@@ -1,6 +1,6 @@
 {
   "name": "html-slide-studio",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "A local-first Windows app for polishing and presenting static HTML slide decks.",
   "license": "MIT",
   "private": true,
